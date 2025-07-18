@@ -13,7 +13,7 @@ const Excalidraw = dynamic(
 );
 
 export default function CanvasPage() {
-  const { roomId } = useParams();
+  const { roomId } = useParams(); // This is now the ObjectId string
   const wsRef = useRef<WebSocket | null>(null);
   const excalidrawRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -31,7 +31,7 @@ export default function CanvasPage() {
       console.log('WebSocket connected');
       ws.send(JSON.stringify({
         type: 'join_room',
-        roomId: roomId.toString()
+        roomId, // This is the ObjectId
       }));
     };
 
@@ -71,6 +71,7 @@ export default function CanvasPage() {
     if (sendElements.current) clearTimeout(sendElements.current);
     sendElements.current = setTimeout(() => {
       console.log('[WS] Sending elements:', elements, 'from clientId:', clientId.current);
+      console.log('Room Id: ',roomId);
       wsRef.current?.send(JSON.stringify({
         type: 'drawing',
         roomId: roomId?.toString(),

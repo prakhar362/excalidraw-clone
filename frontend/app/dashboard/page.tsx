@@ -117,7 +117,7 @@ export default function DashboardPage() {
             <div
               key={room._id}
               className="cursor-pointer text-blue-600 hover:underline"
-              onClick={() => router.push(`/canvas/${room.slug}`)}
+              onClick={() => router.push(`/canvas/${room._id}`)} // Use _id here!
             >
               {room.slug}
             </div>
