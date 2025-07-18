@@ -25,7 +25,7 @@ const users = [];
 function checkUser(token) {
     try {
         const decoded = jsonwebtoken_1.default.verify(token, JWT_SECRET);
-        return (decoded === null || decoded === void 0 ? void 0 : decoded.userId) || null;
+        return decoded.userId;
     }
     catch (_a) {
         return null;
@@ -34,63 +34,56 @@ function checkUser(token) {
 function startWebSocketServer() {
     mongoose_1.default.connect(MONGO_URI).then(() => {
         console.log('✅ WS Server connected to MongoDB');
-    }).catch(err => {
-        console.error('❌ MongoDB WS connection error:', err);
     });
     const wss = new ws_1.WebSocketServer({ port: 8000 });
-    wss.on('connection', (ws, request) => {
-        const url = request.url;
-        if (!url)
-            return;
-        const queryParams = new URLSearchParams(url.split('?')[1]);
-        const token = queryParams.get('token') || '';
+    wss.on('connection', (ws, req) => {
+        var _a;
+        const url = (_a = req.url) !== null && _a !== void 0 ? _a : '';
+        const token = new URLSearchParams(url.split('?')[1]).get('token') || '';
         const userId = checkUser(token);
-        if (!userId) {
-            ws.close();
-            return;
-        }
-        users.push({ userId, rooms: [], ws });
+        if (!userId)
+            return ws.close();
+        users.push({ ws, rooms: [], userId });
         ws.on('message', (data) => __awaiter(this, void 0, void 0, function* () {
-            let parsedData;
             try {
-                parsedData = typeof data === 'string' ? JSON.parse(data) : JSON.parse(data.toString());
+                const parsed = typeof data === 'string' ? JSON.parse(data) : JSON.parse(data.toString());
+                console.log("Recived from client Prakhar: ", parsed);
+                const user = users.find(u => u.ws === ws);
+                if (!user)
+                    return;
+                const { type, roomId, message, elements, clientId } = parsed;
+                switch (type) {
+                    case 'join_room':
+                        if (!user.rooms.includes(roomId))
+                            user.rooms.push(roomId);
+                        break;
+                    case 'drawing':
+                        yield Chat_1.Chat.create({
+                            roomId,
+                            userId: user.userId,
+                            message: JSON.stringify(elements)
+                        });
+                        users.forEach(u => {
+                            if (u.ws !== ws && u.rooms.includes(roomId)) {
+                                u.ws.send(JSON.stringify({
+                                    type: 'drawing',
+                                    roomId,
+                                    elements,
+                                    clientId
+                                }));
+                            }
+                        });
+                        break;
+                }
             }
-            catch (err) {
-                console.error('Invalid JSON:', err);
-                return;
-            }
-            const user = users.find(u => u.ws === ws);
-            if (!user)
-                return;
-            switch (parsedData.type) {
-                case 'join_room':
-                    user.rooms.push(parsedData.roomId);
-                    break;
-                case 'leave_room':
-                    user.rooms = user.rooms.filter(room => room !== parsedData.roomId);
-                    break;
-                case 'chat':
-                    yield Chat_1.Chat.create({ roomId: parsedData.roomId, userId: user.userId, message: parsedData.message });
-                    users.forEach(u => {
-                        if (u.rooms.includes(parsedData.roomId)) {
-                            u.ws.send(JSON.stringify({ type: 'chat', message: parsedData.message, roomId: parsedData.roomId }));
-                        }
-                    });
-                    break;
-                case 'drawing':
-                    yield Chat_1.Chat.create({ roomId: parsedData.roomId, userId: user.userId, message: JSON.stringify(parsedData.elements) });
-                    users.forEach(u => {
-                        if (u.rooms.includes(parsedData.roomId)) {
-                            u.ws.send(JSON.stringify({ type: 'drawing', elements: parsedData.elements, roomId: parsedData.roomId }));
-                        }
-                    });
-                    break;
+            catch (e) {
+                console.error('WebSocket Error:', e);
             }
         }));
         ws.on('close', () => {
-            const index = users.findIndex(u => u.ws === ws);
-            if (index !== -1)
-                users.splice(index, 1);
+            const idx = users.findIndex(u => u.ws === ws);
+            if (idx !== -1)
+                users.splice(idx, 1);
         });
     });
     console.log('🚀 WebSocket Server running on ws://localhost:8000');

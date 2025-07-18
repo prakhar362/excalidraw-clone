@@ -88,6 +88,7 @@ app.post('/create-room', middleware, async (req: any, res) => {
   }
 });
 
+// ---------------------- GET ALL ROOMS ----------------------
 app.get('/my-rooms', middleware, async (req: any, res) => {
   try {
     const userId = req.userId;
@@ -95,7 +96,7 @@ app.get('/my-rooms', middleware, async (req: any, res) => {
     const rooms = await Room.find({ adminId: userId }).sort({ createdAt: -1 });
 
     res.json({ rooms });
-    console.log(rooms);
+    // console.log(rooms);
   } catch (e) {
     console.error('Failed to fetch user rooms:', e);
     res.status(500).json({ message: 'Failed to fetch rooms' });

@@ -94,12 +94,13 @@ function startHttpServer() {
             res.status(500).json({ message: 'Failed to create room' });
         }
     }));
+    // ---------------------- GET ALL ROOMS ----------------------
     app.get('/my-rooms', middleware_1.middleware, (req, res) => __awaiter(this, void 0, void 0, function* () {
         try {
             const userId = req.userId;
             const rooms = yield Room_1.Room.find({ adminId: userId }).sort({ createdAt: -1 });
             res.json({ rooms });
-            console.log(rooms);
+            // console.log(rooms);
         }
         catch (e) {
             console.error('Failed to fetch user rooms:', e);

@@ -4,17 +4,20 @@ import dynamic from 'next/dynamic';
 import { useEffect, useRef, useState } from 'react';
 import '@excalidraw/excalidraw/index.css';
 import { useParams } from 'next/navigation';
+import type { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types/types';
+import type { ExcalidrawElement } from '@excalidraw/excalidraw/types/element/types';
 
-// Dynamically import Excalidraw
 const Excalidraw = dynamic(
-  () => import('@excalidraw/excalidraw').then((mod) => mod.Excalidraw),
+  () => import('@excalidraw/excalidraw').then(mod => mod.Excalidraw),
   { ssr: false }
 );
 
 export default function CanvasPage() {
   const { roomId } = useParams();
   const wsRef = useRef<WebSocket | null>(null);
+  const excalidrawRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const [isConnected, setIsConnected] = useState(false);
+  const clientId = useRef<string>(Math.random().toString(36).slice(2));
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -24,9 +27,8 @@ export default function CanvasPage() {
     wsRef.current = ws;
 
     ws.onopen = () => {
-      console.log("✅ WebSocket connected");
       setIsConnected(true);
-
+      console.log('WebSocket connected');
       ws.send(JSON.stringify({
         type: 'join_room',
         roomId: roomId.toString()
@@ -34,17 +36,26 @@ export default function CanvasPage() {
     };
 
     ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      // handle incoming stroke/chat etc.
-      console.log("📨 Received:", data);
+      try {
+        const data = JSON.parse(event.data);
+        console.log('[WS] Received message:', data);
+
+        if (data.type === 'drawing' && data.clientId !== clientId.current) {
+          console.log('[WS] Applying drawing update from clientId:', data.clientId, data.elements);
+          const incomingElements: ExcalidrawElement[] = data.elements;
+          excalidrawRef.current?.updateScene({ elements: incomingElements });
+        }
+      } catch (err) {
+        console.error('Error handling WS message:', err);
+      }
     };
 
     ws.onerror = (error) => {
-      console.error("WebSocket error:", error);
+      console.error('WebSocket error:', error);
     };
 
     ws.onclose = () => {
-      console.log("❌ WebSocket closed");
+      setIsConnected(false);
     };
 
     return () => {
@@ -52,46 +63,36 @@ export default function CanvasPage() {
     };
   }, [roomId]);
 
-  const handleChange = async (elements: readonly any[]) => {
-    const message = {
-      type: 'chat',
-      roomId: roomId?.toString(),
-      message: JSON.stringify(elements), // send drawing data as chat message
-    };
+  const sendElements = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    const ws = wsRef.current;
+  const handleChange = (elements: readonly ExcalidrawElement[]) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
 
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify(message));
-    }
-
-    // Save to HTTP layer
-    try {
-      await fetch(`http://localhost:5000/chats/${roomId}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `${localStorage.getItem('token')}`,
-        },
-        body: JSON.stringify({ message: JSON.stringify(elements) }),
-      });
-    } catch (err) {
-      console.error("❌ Failed to send HTTP chat:", err);
-    }
+    if (sendElements.current) clearTimeout(sendElements.current);
+    sendElements.current = setTimeout(() => {
+      console.log('[WS] Sending elements:', elements, 'from clientId:', clientId.current);
+      wsRef.current?.send(JSON.stringify({
+        type: 'drawing',
+        roomId: roomId?.toString(),
+        elements,
+        clientId: clientId.current
+      }));
+    }, 150);
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0 }}>
+    <div style={{ position: 'fixed', inset: 0 }}>
       <Excalidraw
-        theme="light"
+        ref={excalidrawRef}
+        theme='light'
         onChange={handleChange}
         UIOptions={{
           canvasActions: {
             loadScene: true,
             export: { saveFileToDisk: true },
             saveAsImage: true,
-            saveToActiveFile: true,
-          },
+            saveToActiveFile: true
+          }
         }}
       />
     </div>

@@ -9,16 +9,18 @@ dotenv.config();
 const JWT_SECRET = process.env.JWT_SECRET!;
 const MONGO_URI = process.env.MONGO_URI!;
 
-const users: {
+interface User {
   ws: WebSocket;
   rooms: string[];
   userId: string;
-}[] = [];
+}
+
+const users: User[] = [];
 
 function checkUser(token: string): string | null {
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as { userId: string };
-    return decoded?.userId || null;
+    return decoded.userId;
   } catch {
     return null;
   }
@@ -27,71 +29,59 @@ function checkUser(token: string): string | null {
 export function startWebSocketServer() {
   mongoose.connect(MONGO_URI).then(() => {
     console.log('✅ WS Server connected to MongoDB');
-  }).catch(err => {
-    console.error('❌ MongoDB WS connection error:', err);
   });
 
   const wss = new WebSocketServer({ port: 8000 });
 
-  wss.on('connection', (ws, request) => {
-    const url = request.url;
-    if (!url) return;
-
-    const queryParams = new URLSearchParams(url.split('?')[1]);
-    const token = queryParams.get('token') || '';
+  wss.on('connection', (ws, req) => {
+    const url = req.url ?? '';
+    const token = new URLSearchParams(url.split('?')[1]).get('token') || '';
     const userId = checkUser(token);
+    if (!userId) return ws.close();
 
-    if (!userId) {
-      ws.close();
-      return;
-    }
-
-    users.push({ userId, rooms: [], ws });
+    users.push({ ws, rooms: [], userId });
 
     ws.on('message', async (data) => {
-      let parsedData: any;
       try {
-        parsedData = typeof data === 'string' ? JSON.parse(data) : JSON.parse(data.toString());
-      } catch (err) {
-        console.error('Invalid JSON:', err);
-        return;
-      }
+        const parsed = typeof data === 'string' ? JSON.parse(data) : JSON.parse(data.toString());
+        console.log("Recived from client Prakhar: ",parsed);
+        const user = users.find(u => u.ws === ws);
+        if (!user) return;
 
-      const user = users.find(u => u.ws === ws);
-      if (!user) return;
+        const { type, roomId, message, elements, clientId } = parsed;
 
-      switch (parsedData.type) {
-        case 'join_room':
-          user.rooms.push(parsedData.roomId);
-          break;
+        switch (type) {
+          case 'join_room':
+            if (!user.rooms.includes(roomId)) user.rooms.push(roomId);
+            break;
 
-        case 'leave_room':
-          user.rooms = user.rooms.filter(room => room !== parsedData.roomId);
-          break;
+          case 'drawing':
+            await Chat.create({
+              roomId,
+              userId: user.userId,
+              message: JSON.stringify(elements)
+            });
 
-        case 'chat':
-          await Chat.create({ roomId: parsedData.roomId, userId: user.userId, message: parsedData.message });
-          users.forEach(u => {
-            if (u.rooms.includes(parsedData.roomId)) {
-              u.ws.send(JSON.stringify({ type: 'chat', message: parsedData.message, roomId: parsedData.roomId }));
-            }
-          });
-          break;
-
-        case 'drawing':
-          await Chat.create({ roomId: parsedData.roomId, userId: user.userId, message: JSON.stringify(parsedData.elements) });
-          users.forEach(u => {
-            if (u.rooms.includes(parsedData.roomId)) {
-              u.ws.send(JSON.stringify({ type: 'drawing', elements: parsedData.elements, roomId: parsedData.roomId }));
-            }
-          });
-          break;
+            users.forEach(u => {
+              if (u.ws !== ws && u.rooms.includes(roomId)) {
+                u.ws.send(JSON.stringify({
+                  type: 'drawing',
+                  roomId,
+                  elements,
+                  clientId
+                }));
+              }
+            });
+            break;
+        }
+      } catch (e) {
+        console.error('WebSocket Error:', e);
       }
     });
 
     ws.on('close', () => {
-      const index = users.findIndex(u => u.ws === ws);
-      if (index !== -1) users.splice(index, 1);
+      const idx = users.findIndex(u => u.ws === ws);
+      if (idx !== -1) users.splice(idx, 1);
     });
   });
 
