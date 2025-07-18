@@ -134,7 +134,7 @@ function AuthPage() {
           }
           // Navigate to home after a short delay
           setTimeout(() => {
-            router.push('/canvas/123');
+            router.push('/dashboard');
           }, 1000);
         } else if (activeTab === 'signup') {
           setActiveTab('login');
