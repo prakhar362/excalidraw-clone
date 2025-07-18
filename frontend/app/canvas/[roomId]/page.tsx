@@ -4,8 +4,6 @@ import dynamic from 'next/dynamic';
 import { useEffect, useRef, useState } from 'react';
 import '@excalidraw/excalidraw/index.css';
 import { useParams } from 'next/navigation';
-import type { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types/types';
-import type { ExcalidrawElement } from '@excalidraw/excalidraw/types/element/types';
 
 const Excalidraw = dynamic(
   () => import('@excalidraw/excalidraw').then(mod => mod.Excalidraw),
@@ -13,9 +11,9 @@ const Excalidraw = dynamic(
 );
 
 export default function CanvasPage() {
-  const { roomId } = useParams(); // This is now the ObjectId string
+  const { roomId } = useParams();
   const wsRef = useRef<WebSocket | null>(null);
-  const excalidrawRef = useRef<ExcalidrawImperativeAPI | null>(null);
+  const excalidrawRef = useRef<any>(null);
   const [isConnected, setIsConnected] = useState(false);
   const clientId = useRef<string>(Math.random().toString(36).slice(2));
 
@@ -28,25 +26,20 @@ export default function CanvasPage() {
 
     ws.onopen = () => {
       setIsConnected(true);
-      console.log('WebSocket connected');
+      console.log('✅ WebSocket connected');
       ws.send(JSON.stringify({
         type: 'join_room',
-        roomId, // This is the ObjectId
+        roomId,
       }));
     };
 
     ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        console.log('[WS] Received message:', data);
-
-        if (data.type === 'drawing' && data.clientId !== clientId.current) {
-          console.log('[WS] Applying drawing update from clientId:', data.clientId, data.elements);
-          const incomingElements: ExcalidrawElement[] = data.elements;
-          excalidrawRef.current?.updateScene({ elements: incomingElements });
-        }
-      } catch (err) {
-        console.error('Error handling WS message:', err);
+      const data = JSON.parse(event.data);
+      if (data.type === 'drawing' && data.clientId !== clientId.current) {
+        const incomingElements = Array.isArray(data.elements) ? data.elements : [data.elements];
+        const currentElements = excalidrawRef.current?.getSceneElements() || [];
+        const merged = mergeElements(currentElements, incomingElements);
+        excalidrawRef.current?.updateScene({ elements: merged });
       }
     };
 
@@ -71,7 +64,6 @@ export default function CanvasPage() {
     if (sendElements.current) clearTimeout(sendElements.current);
     sendElements.current = setTimeout(() => {
       console.log('[WS] Sending elements:', elements, 'from clientId:', clientId.current);
-      console.log('Room Id: ',roomId);
       wsRef.current?.send(JSON.stringify({
         type: 'drawing',
         roomId: roomId?.toString(),
@@ -84,18 +76,42 @@ export default function CanvasPage() {
   return (
     <div style={{ position: 'fixed', inset: 0 }}>
       <Excalidraw
-        ref={excalidrawRef}
-        theme='light'
+        ref={(instance) => { excalidrawRef.current = instance; }}
+        theme="light"
         onChange={handleChange}
         UIOptions={{
           canvasActions: {
             loadScene: true,
             export: { saveFileToDisk: true },
             saveAsImage: true,
-            saveToActiveFile: true
-          }
+            saveToActiveFile: true,
+          },
         }}
       />
     </div>
   );
+}
+
+// ✅ Manual merge logic by version & deletion flag
+function mergeElements(
+  existing: readonly ExcalidrawElement[],
+  incoming: ExcalidrawElement[]
+): ExcalidrawElement[] {
+  const mergedMap = new Map<string, ExcalidrawElement>();
+
+  // Add existing elements to map
+  for (const el of existing) {
+    mergedMap.set(el.id, el);
+  }
+
+  // Merge or replace with incoming ones
+  for (const newEl of incoming) {
+    const existingEl = mergedMap.get(newEl.id);
+    if (!existingEl || newEl.version > existingEl.version) {
+      mergedMap.set(newEl.id, newEl);
+    }
+  }
+
+  // Filter out deleted elements
+  return Array.from(mergedMap.values()).filter(el => !el.isDeleted);
 }
