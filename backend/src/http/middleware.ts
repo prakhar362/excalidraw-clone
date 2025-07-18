@@ -26,6 +26,7 @@ export function middleware(req: Request, res: Response, next: NextFunction) {
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as { userId: string };
     req.userId = decoded.userId;
+    console.log("User verified");
     next();
   } catch (err) {
     console.error("JWT verification failed:", err);

@@ -22,6 +22,17 @@ export default function DashboardPage() {
 
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
 
+  // Toast options
+  const toastOptions = {
+    position: 'top-right' as const,
+    autoClose: 2000,
+    hideProgressBar: false,
+    closeOnClick: true,
+    pauseOnHover: true,
+    draggable: true,
+    theme: 'dark' as const,
+  };
+
   // Fetch rooms created by user
   const fetchRooms = async () => {
     try {
@@ -31,9 +42,10 @@ export default function DashboardPage() {
         },
       });
       setRooms(res.data.rooms);
+      console.log("Rooms: ",res.data);
     } catch (e) {
       console.error(e);
-      toast.error('Failed to fetch rooms');
+      toast.error('Failed to fetch rooms', toastOptions);
     }
   };
 
@@ -42,6 +54,9 @@ export default function DashboardPage() {
       router.push('/login');
     } else {
       fetchRooms();
+      // Poll every 5 seconds
+      const interval = setInterval(fetchRooms, 5000);
+      return () => clearInterval(interval);
     }
   }, []);
 
@@ -49,15 +64,15 @@ export default function DashboardPage() {
     if (!roomSlug) return;
     try {
       const res = await axios.post(
-        'http://localhost:5000/room',
+        'http://localhost:5000/create-room',
         { name: roomSlug },
         { headers: { Authorization: token || '' } }
       );
-      toast.success('Room created!');
-      router.push(`/canvas/${res.data.slug}`);
+      toast.success('Room created!', toastOptions);
+      //router.push(`/canvas/${res.data.slug}`);
     } catch (e: any) {
       console.error(e);
-      toast.error(e?.response?.data?.message || 'Error creating room');
+      toast.error(e?.response?.data?.message || 'Error creating room', toastOptions);
     }
   };
 

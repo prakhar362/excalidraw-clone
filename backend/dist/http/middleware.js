@@ -17,6 +17,7 @@ function middleware(req, res, next) {
     try {
         const decoded = jsonwebtoken_1.default.verify(token, JWT_SECRET);
         req.userId = decoded.userId;
+        console.log("User verified");
         next();
     }
     catch (err) {

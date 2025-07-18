@@ -72,7 +72,7 @@ app.post('/login', async (req, res) => {
 });
 
 // ---------------------- CREATE ROOM ----------------------
-app.post('/room', middleware, async (req: any, res) => {
+app.post('/create-room', middleware, async (req: any, res) => {
   const { name } = req.body;
   if (!name) return res.status(400).json({ message: 'Missing room name' });
 
@@ -87,6 +87,21 @@ app.post('/room', middleware, async (req: any, res) => {
     res.status(500).json({ message: 'Failed to create room' });
   }
 });
+
+app.get('/my-rooms', middleware, async (req: any, res) => {
+  try {
+    const userId = req.userId;
+    
+    const rooms = await Room.find({ adminId: userId }).sort({ createdAt: -1 });
+
+    res.json({ rooms });
+    console.log(rooms);
+  } catch (e) {
+    console.error('Failed to fetch user rooms:', e);
+    res.status(500).json({ message: 'Failed to fetch rooms' });
+  }
+});
+
 
 // ---------------------- GET CHATS ----------------------
 app.get('/chats/:roomId', async (req, res) => {

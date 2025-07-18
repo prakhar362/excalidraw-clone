@@ -78,7 +78,7 @@ function startHttpServer() {
         }
     }));
     // ---------------------- CREATE ROOM ----------------------
-    app.post('/room', middleware_1.middleware, (req, res) => __awaiter(this, void 0, void 0, function* () {
+    app.post('/create-room', middleware_1.middleware, (req, res) => __awaiter(this, void 0, void 0, function* () {
         const { name } = req.body;
         if (!name)
             return res.status(400).json({ message: 'Missing room name' });
@@ -92,6 +92,18 @@ function startHttpServer() {
         catch (e) {
             console.error(e);
             res.status(500).json({ message: 'Failed to create room' });
+        }
+    }));
+    app.get('/my-rooms', middleware_1.middleware, (req, res) => __awaiter(this, void 0, void 0, function* () {
+        try {
+            const userId = req.userId;
+            const rooms = yield Room_1.Room.find({ adminId: userId }).sort({ createdAt: -1 });
+            res.json({ rooms });
+            console.log(rooms);
+        }
+        catch (e) {
+            console.error('Failed to fetch user rooms:', e);
+            res.status(500).json({ message: 'Failed to fetch rooms' });
         }
     }));
     // ---------------------- GET CHATS ----------------------
