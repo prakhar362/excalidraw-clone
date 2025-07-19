@@ -15,20 +15,20 @@ const JWT_SECRET = process.env.JWT_SECRET!;
 const MONGO_URI = process.env.MONGO_URI!;
 
 
-export function startHttpServer() {
-const app = express();
-app.use(express.json());
-app.use(cors());
+export function createExpressApp() {
+  const app = express();
+  app.use(express.json());
+  app.use(cors({
+    origin: [
+      'https://your-frontend.vercel.app',
+      'http://localhost:3000'
+    ],
+    credentials: true
+  }));
 
-mongoose.connect(MONGO_URI).then(() => {
-  console.log('✅ Connected to MongoDB');
-}).catch((err) => {
-  console.error('❌ MongoDB connection failed:', err);
-});
-
-app.get('/', (req, res) => {
-  res.send('http server backend running');
-});
+  app.get('/', (req, res) => {
+    res.send('http server backend running');
+  });
 
 // ---------------------- SIGNUP ----------------------
 app.post('/signup', async (req, res) => {
@@ -191,7 +191,5 @@ app.post('/chats/:roomId', middleware, async (req: any, res) => {
   }
 });
 
-app.listen(5000, () => {
-  console.log('🚀 HTTP SERVER RUNNING on http://localhost:5000');
-});
+  return app;
 }

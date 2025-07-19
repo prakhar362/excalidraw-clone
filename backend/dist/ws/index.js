@@ -12,15 +12,11 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.startWebSocketServer = startWebSocketServer;
+exports.attachWebSocketServer = attachWebSocketServer;
 const ws_1 = require("ws");
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
-const dotenv_1 = __importDefault(require("dotenv"));
-const mongoose_1 = __importDefault(require("mongoose"));
-const User_1 = require("../models/User"); // 👈 Assuming you have this model
-dotenv_1.default.config();
+const User_1 = require("../models/User");
 const JWT_SECRET = process.env.JWT_SECRET;
-const MONGO_URI = process.env.MONGO_URI;
 const users = [];
 function checkUser(token) {
     try {
@@ -31,11 +27,8 @@ function checkUser(token) {
         return null;
     }
 }
-function startWebSocketServer() {
-    mongoose_1.default.connect(MONGO_URI).then(() => {
-        console.log('✅ WS Server connected to MongoDB');
-    });
-    const wss = new ws_1.WebSocketServer({ port: 8000 });
+function attachWebSocketServer(server) {
+    const wss = new ws_1.WebSocketServer({ server });
     wss.on('connection', (ws, req) => {
         var _a;
         const url = (_a = req.url) !== null && _a !== void 0 ? _a : '';
@@ -47,7 +40,6 @@ function startWebSocketServer() {
         ws.on('message', (data) => __awaiter(this, void 0, void 0, function* () {
             try {
                 const parsed = typeof data === 'string' ? JSON.parse(data) : JSON.parse(data.toString());
-                //console.log("Recived from client Prakhar: ",parsed);
                 const user = users.find(u => u.ws === ws);
                 if (!user)
                     return;
@@ -75,7 +67,6 @@ function startWebSocketServer() {
                             if (!dbUser)
                                 return;
                             const username = dbUser.name;
-                            // console.log("Cursor sending username: ",username);
                             users.forEach(u => {
                                 if (u.ws !== ws && u.rooms.includes(roomId)) {
                                     u.ws.send(JSON.stringify({
@@ -84,7 +75,7 @@ function startWebSocketServer() {
                                         pointer: parsed.pointer,
                                         clientId: parsed.clientId,
                                         color: parsed.color,
-                                        username, // 👈 Send real name from DB
+                                        username,
                                     }));
                                 }
                             });
@@ -106,5 +97,5 @@ function startWebSocketServer() {
                 users.splice(idx, 1);
         });
     });
-    console.log('🚀 WebSocket Server running on ws://localhost:8000');
+    console.log('🚀 WebSocket Server attached');
 }

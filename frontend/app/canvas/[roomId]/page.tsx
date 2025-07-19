@@ -70,7 +70,7 @@ export default function CanvasPage() {
     const token = localStorage.getItem('token');
     if (!token || !roomId) return;
 
-    const ws = new WebSocket(`ws://localhost:8000?token=${token}`);
+    const ws = new WebSocket(`ws://localhost:5000?token=${token}`);
     wsRef.current = ws;
 
     ws.onopen = () => {

@@ -12,12 +12,11 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.startHttpServer = startHttpServer;
+exports.createExpressApp = createExpressApp;
 const express_1 = __importDefault(require("express"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const cors_1 = __importDefault(require("cors"));
 const bcrypt_1 = __importDefault(require("bcrypt"));
-const mongoose_1 = __importDefault(require("mongoose"));
 const dotenv_1 = __importDefault(require("dotenv"));
 const middleware_1 = require("./middleware");
 const User_1 = require("../models/User");
@@ -26,15 +25,16 @@ const Chat_1 = require("../models/Chat");
 dotenv_1.default.config();
 const JWT_SECRET = process.env.JWT_SECRET;
 const MONGO_URI = process.env.MONGO_URI;
-function startHttpServer() {
+function createExpressApp() {
     const app = (0, express_1.default)();
     app.use(express_1.default.json());
-    app.use((0, cors_1.default)());
-    mongoose_1.default.connect(MONGO_URI).then(() => {
-        console.log('✅ Connected to MongoDB');
-    }).catch((err) => {
-        console.error('❌ MongoDB connection failed:', err);
-    });
+    app.use((0, cors_1.default)({
+        origin: [
+            'https://your-frontend.vercel.app',
+            'http://localhost:3000'
+        ],
+        credentials: true
+    }));
     app.get('/', (req, res) => {
         res.send('http server backend running');
     });
@@ -183,7 +183,5 @@ function startHttpServer() {
             res.status(500).json({ message: 'Failed to store drawing' });
         }
     }));
-    app.listen(5000, () => {
-        console.log('🚀 HTTP SERVER RUNNING on http://localhost:5000');
-    });
+    return app;
 }
