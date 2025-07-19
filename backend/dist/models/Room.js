@@ -38,6 +38,7 @@ const mongoose_1 = __importStar(require("mongoose"));
 const roomSchema = new mongoose_1.Schema({
     slug: { type: String, required: true, unique: true },
     adminId: { type: mongoose_1.default.Schema.Types.ObjectId, ref: 'User', required: true },
+    collaborators: [{ type: mongoose_1.default.Schema.Types.ObjectId, ref: 'User' }], // NEW
     createdAt: { type: Date, default: Date.now },
 });
 exports.Room = mongoose_1.default.model('Room', roomSchema);

@@ -92,16 +92,21 @@ app.post('/create-room', middleware, async (req: any, res) => {
 app.get('/my-rooms', middleware, async (req: any, res) => {
   try {
     const userId = req.userId;
-    
-    const rooms = await Room.find({ adminId: userId }).sort({ createdAt: -1 });
 
+    const rooms = await Room.find({
+      $or: [
+        { adminId: userId },
+        { collaborators: userId }
+      ]
+    }).sort({ createdAt: -1 });
+    console.log(rooms);
     res.json({ rooms });
-    // console.log(rooms);
   } catch (e) {
     console.error('Failed to fetch user rooms:', e);
     res.status(500).json({ message: 'Failed to fetch rooms' });
   }
 });
+
 
 
 // ---------------------- GET CHATS ----------------------
@@ -122,6 +127,50 @@ app.get('/room/:slug', async (req, res) => {
   const room = await Room.findOne({ slug });
   res.json({ room });
 });
+
+// ---------------------- ADD COLLABORATOR TO ROOM ----------------------
+app.post('/rooms/:roomId/add-collaborator', middleware, async (req, res) => {
+  const { roomId } = req.params;
+  const { username } = req.body;
+
+  if (!username) return res.status(400).json({ message: 'Username is required' });
+
+  try {
+    const userToAdd = await User.findOne({ name: username });
+    if (!userToAdd) return res.status(404).json({ message: 'No such user found' });
+
+    const room = await Room.findById(roomId);
+    if (!room) return res.status(404).json({ message: 'Room not found' });
+
+    // Ensure collaborators array exists
+    if (!Array.isArray(room.collaborators)) {
+      room.collaborators = [];
+    }
+
+    // Check if already a collaborator
+    const isAlreadyCollaborator = room.collaborators.some(
+      (id) => id.toString() === userToAdd._id.toString()
+    );
+    if (isAlreadyCollaborator) {
+      return res.status(400).json({ message: 'User is already a collaborator' });
+    }
+
+    // Don't allow admin to add themselves again
+    if (room.adminId.toString() === userToAdd._id.toString()) {
+      return res.status(400).json({ message: 'Admin is already in the room' });
+    }
+
+    // Add collaborator and save
+    room.collaborators.push(userToAdd._id);
+    await room.save();
+
+    res.status(200).json({ message: `${username} added as collaborator`, collaboratorId: userToAdd._id });
+  } catch (e) {
+    console.error('Error adding collaborator:', e);
+    res.status(500).json({ message: 'Failed to add collaborator' });
+  }
+});
+
 
 // ---------------------- STORE CHAT ----------------------
 app.post('/chats/:roomId', middleware, async (req: any, res) => {
