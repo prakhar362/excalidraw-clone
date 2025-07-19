@@ -1,7 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  images: {
+    domains: ["www.launchuicomponents.com", "vibeus-cdn.vibe.pub"],
+  },
 };
 
 export default nextConfig;
