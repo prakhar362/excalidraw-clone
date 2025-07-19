@@ -18,6 +18,7 @@ const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const dotenv_1 = __importDefault(require("dotenv"));
 const mongoose_1 = __importDefault(require("mongoose"));
 const Chat_1 = require("../models/Chat");
+const User_1 = require("../models/User"); // 👈 Assuming you have this model
 dotenv_1.default.config();
 const JWT_SECRET = process.env.JWT_SECRET;
 const MONGO_URI = process.env.MONGO_URI;
@@ -47,7 +48,7 @@ function startWebSocketServer() {
         ws.on('message', (data) => __awaiter(this, void 0, void 0, function* () {
             try {
                 const parsed = typeof data === 'string' ? JSON.parse(data) : JSON.parse(data.toString());
-                console.log("Recived from client Prakhar: ", parsed);
+                //console.log("Recived from client Prakhar: ",parsed);
                 const user = users.find(u => u.ws === ws);
                 if (!user)
                     return;
@@ -74,19 +75,31 @@ function startWebSocketServer() {
                             }
                         });
                         break;
-                    case 'cursor':
-                        users.forEach(u => {
-                            if (u.ws !== ws && u.rooms.includes(roomId)) {
-                                u.ws.send(JSON.stringify({
-                                    type: 'cursor',
-                                    roomId,
-                                    pointer: parsed.pointer,
-                                    clientId: parsed.clientId,
-                                    color: parsed.color
-                                }));
-                            }
-                        });
+                    case 'cursor': {
+                        try {
+                            const dbUser = yield User_1.User.findById(user.userId).select('name');
+                            if (!dbUser)
+                                return;
+                            const username = dbUser.name;
+                            console.log("Cursor sending username: ", username);
+                            users.forEach(u => {
+                                if (u.ws !== ws && u.rooms.includes(roomId)) {
+                                    u.ws.send(JSON.stringify({
+                                        type: 'cursor',
+                                        roomId,
+                                        pointer: parsed.pointer,
+                                        clientId: parsed.clientId,
+                                        color: parsed.color,
+                                        username, // 👈 Send real name from DB
+                                    }));
+                                }
+                            });
+                        }
+                        catch (err) {
+                            console.error('Error fetching username:', err);
+                        }
                         break;
+                    }
                 }
             }
             catch (e) {

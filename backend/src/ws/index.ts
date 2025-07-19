@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 import { Chat } from '../models/Chat';
+import { User } from '../models/User'; // 👈 Assuming you have this model
 
 dotenv.config();
 
@@ -44,7 +45,7 @@ export function startWebSocketServer() {
     ws.on('message', async (data) => {
       try {
         const parsed = typeof data === 'string' ? JSON.parse(data) : JSON.parse(data.toString());
-        console.log("Recived from client Prakhar: ",parsed);
+        //console.log("Recived from client Prakhar: ",parsed);
         const user = users.find(u => u.ws === ws);
         if (!user) return;
 
@@ -74,19 +75,32 @@ export function startWebSocketServer() {
             });
             break;
 
-          case 'cursor':
-  users.forEach(u => {
-    if (u.ws !== ws && u.rooms.includes(roomId)) {
-      u.ws.send(JSON.stringify({
-        type: 'cursor',
-        roomId,
-        pointer: parsed.pointer,
-        clientId: parsed.clientId,
-        color: parsed.color
-      }));
-    }
-  });
+case 'cursor': {
+  try {
+    const dbUser = await User.findById(user.userId).select('name');
+    if (!dbUser) return;
+
+    const username = dbUser.name;
+    // console.log("Cursor sending username: ",username);
+
+    users.forEach(u => {
+      if (u.ws !== ws && u.rooms.includes(roomId)) {
+        u.ws.send(JSON.stringify({
+          type: 'cursor',
+          roomId,
+          pointer: parsed.pointer,
+          clientId: parsed.clientId,
+          color: parsed.color,
+          username, // 👈 Send real name from DB
+        }));
+      }
+    });
+  } catch (err) {
+    console.error('Error fetching username:', err);
+  }
   break;
+}
+
 
         }
       } catch (e) {

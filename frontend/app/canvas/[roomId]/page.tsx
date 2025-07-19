@@ -26,10 +26,15 @@ export default function CanvasPage() {
   const sendElements = useRef<ReturnType<typeof setTimeout> | null>(null);
   const userColor = useRef<string>(getRandomColor());
   const [remoteCursors, setRemoteCursors] = useState<Record<string, CursorPosition>>({});
+  const username = useRef<string>('');
 
   useEffect(() => {
     const token = localStorage.getItem('token');
+    const storedUsername = localStorage.getItem('username');
     if (!token || !roomId) return;
+
+    // Get username from localStorage or use a default
+    username.current = storedUsername || `User-${clientId.current.slice(0, 4)}`;
 
     const ws = new WebSocket(`ws://localhost:8000?token=${token}`);
     wsRef.current = ws;
@@ -44,28 +49,28 @@ export default function CanvasPage() {
     };
 
     ws.onmessage = (event) => {
-      console.log('📩 [WebSocket] Raw message received:', event.data);
+      //console.log('📩 [WebSocket] Raw message received:', event.data);
       try {
         const data = JSON.parse(event.data);
-        console.log('📥 [WebSocket] Parsed message:', data);
+        //console.log('📥 [WebSocket] Parsed message:', data);
 
         if (data.type === 'drawing' && data.clientId !== clientId.current) {
-          console.log('🖌️ [Drawing] Incoming drawing from another client:', data.clientId);
+          //console.log('🖌️ [Drawing] Incoming drawing from another client:', data.clientId);
 
           const incomingElements = Array.isArray(data.elements) ? data.elements : [data.elements];
           const currentElements = excalidrawAPI?.getSceneElements() || [];
 
-          console.log('📊 [Merge] Current elements:', currentElements);
-          console.log('📊 [Merge] Incoming elements:', incomingElements);
+          //console.log('📊 [Merge] Current elements:', currentElements);
+          //console.log('📊 [Merge] Incoming elements:', incomingElements);
 
           const merged = mergeElements(currentElements, incomingElements);
 
-          console.log('✅ [Apply] Merged scene elements:', merged);
+          //console.log('✅ [Apply] Merged scene elements:', merged);
           excalidrawAPI?.updateScene({ elements: merged });
         }
 
         if (data.type === 'cursor' && data.clientId !== clientId.current) {
-          console.log('🖱️ [Cursor] Position from:', data.clientId, data.pointer);
+          //console.log('🖱️ [Cursor] Position from:', data.clientId, data.pointer,data.username);
           
           setRemoteCursors(prev => ({
             ...prev,
@@ -74,7 +79,7 @@ export default function CanvasPage() {
               y: data.pointer.y,
               clientId: data.clientId,
               color: data.color || '#000000',
-              username: `User-${data.clientId.slice(0, 4)}`,
+              username: data.username,
             },
           }));
         }
@@ -109,7 +114,7 @@ export default function CanvasPage() {
         elements,
         clientId: clientId.current,
       };
-      console.log('📤 [Drawing] Sending elements to server:', payload);
+      //console.log('📤 [Drawing] Sending elements to server:', payload);
       wsRef.current?.send(JSON.stringify(payload));
     }, 150);
   };
@@ -123,17 +128,18 @@ export default function CanvasPage() {
       roomId,
       pointer: payload.pointer,
       color: userColor.current,
+      username: username.current,
     };
 
     wsRef.current.send(JSON.stringify(cursorPayload));
-    console.log('📤 [Cursor] Sent pointer update:', cursorPayload);
+    //console.log('📤 [Cursor] Sent pointer update:', cursorPayload);
   };
 
   return (
     <div style={{ position: 'fixed', inset: 0 }}>
       <Excalidraw
         excalidrawAPI={(api) => {
-          console.log('🔧 [Excalidraw] API ready');
+          //console.log('🔧 [Excalidraw] API ready');
           setExcalidrawAPI(api);
         }}
         theme="light"
