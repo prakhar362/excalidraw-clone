@@ -17,7 +17,6 @@ const ws_1 = require("ws");
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const dotenv_1 = __importDefault(require("dotenv"));
 const mongoose_1 = __importDefault(require("mongoose"));
-const Chat_1 = require("../models/Chat");
 const User_1 = require("../models/User"); // 👈 Assuming you have this model
 dotenv_1.default.config();
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -59,11 +58,6 @@ function startWebSocketServer() {
                             user.rooms.push(roomId);
                         break;
                     case 'drawing':
-                        yield Chat_1.Chat.create({
-                            roomId,
-                            userId: user.userId,
-                            message: JSON.stringify(elements)
-                        });
                         users.forEach(u => {
                             if (u.ws !== ws && u.rooms.includes(roomId)) {
                                 u.ws.send(JSON.stringify({
@@ -81,7 +75,7 @@ function startWebSocketServer() {
                             if (!dbUser)
                                 return;
                             const username = dbUser.name;
-                            console.log("Cursor sending username: ", username);
+                            // console.log("Cursor sending username: ",username);
                             users.forEach(u => {
                                 if (u.ws !== ws && u.rooms.includes(roomId)) {
                                     u.ws.send(JSON.stringify({

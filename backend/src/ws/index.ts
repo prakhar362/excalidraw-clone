@@ -56,24 +56,18 @@ export function startWebSocketServer() {
             if (!user.rooms.includes(roomId)) user.rooms.push(roomId);
             break;
 
-          case 'drawing':
-            await Chat.create({
-              roomId,
-              userId: user.userId,
-              message: JSON.stringify(elements)
-            });
-
-            users.forEach(u => {
-              if (u.ws !== ws && u.rooms.includes(roomId)) {
-                u.ws.send(JSON.stringify({
-                  type: 'drawing',
-                  roomId,
-                  elements,
-                  clientId
-                }));
-              }
-            });
-            break;
+         case 'drawing':
+  users.forEach(u => {
+    if (u.ws !== ws && u.rooms.includes(roomId)) {
+      u.ws.send(JSON.stringify({
+        type: 'drawing',
+        roomId,
+        elements,
+        clientId
+      }));
+    }
+  });
+  break;
 
 case 'cursor': {
   try {

@@ -27,51 +27,67 @@ export default function CanvasPage() {
   const userColor = useRef<string>(getRandomColor());
   const [remoteCursors, setRemoteCursors] = useState<Record<string, CursorPosition>>({});
   const username = useRef<string>('');
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [showShare, setShowShare] = useState(false);
+  const [copied, setCopied] = useState(false);
 
+  // ---------------------- Load Drawing on Mount ----------------------
   useEffect(() => {
     const token = localStorage.getItem('token');
     const storedUsername = localStorage.getItem('username');
     if (!token || !roomId) return;
 
-    // Get username from localStorage or use a default
     username.current = storedUsername || `User-${clientId.current.slice(0, 4)}`;
+
+    fetch(`http://localhost:5000/chats/${roomId}`)
+      .then(res => res.json())
+      .then(data => {
+        const history = data.messages || [];
+        const allElements: any[] = [];
+
+        for (let msg of history.reverse()) {
+          try {
+            const parsed = JSON.parse(msg.message);
+            allElements.push(...parsed);
+          } catch {}
+        }
+
+        if (excalidrawAPI) {
+          excalidrawAPI.updateScene({ elements: mergeElements([], allElements) });
+        } else {
+          const interval = setInterval(() => {
+            if (excalidrawAPI) {
+              excalidrawAPI.updateScene({ elements: mergeElements([], allElements) });
+              clearInterval(interval);
+            }
+          }, 300);
+        }
+      });
+  }, [roomId, excalidrawAPI]);
+
+  // ---------------------- WebSocket ----------------------
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token || !roomId) return;
 
     const ws = new WebSocket(`ws://localhost:8000?token=${token}`);
     wsRef.current = ws;
 
     ws.onopen = () => {
-      console.log('✅ [WebSocket] Connected');
-      ws.send(JSON.stringify({
-        type: 'join_room',
-        roomId,
-      }));
-      console.log('📤 [WebSocket] Sent join_room for', roomId);
+      ws.send(JSON.stringify({ type: 'join_room', roomId }));
     };
 
     ws.onmessage = (event) => {
-      //console.log('📩 [WebSocket] Raw message received:', event.data);
       try {
         const data = JSON.parse(event.data);
-        //console.log('📥 [WebSocket] Parsed message:', data);
-
         if (data.type === 'drawing' && data.clientId !== clientId.current) {
-          //console.log('🖌️ [Drawing] Incoming drawing from another client:', data.clientId);
-
           const incomingElements = Array.isArray(data.elements) ? data.elements : [data.elements];
           const currentElements = excalidrawAPI?.getSceneElements() || [];
-
-          //console.log('📊 [Merge] Current elements:', currentElements);
-          //console.log('📊 [Merge] Incoming elements:', incomingElements);
-
           const merged = mergeElements(currentElements, incomingElements);
-
-          //console.log('✅ [Apply] Merged scene elements:', merged);
           excalidrawAPI?.updateScene({ elements: merged });
         }
 
         if (data.type === 'cursor' && data.clientId !== clientId.current) {
-          //console.log('🖱️ [Cursor] Position from:', data.clientId, data.pointer,data.username);
-          
           setRemoteCursors(prev => ({
             ...prev,
             [data.clientId]: {
@@ -83,65 +99,88 @@ export default function CanvasPage() {
             },
           }));
         }
-
       } catch (e) {
-        console.error('❌ [WebSocket] Failed to parse or apply message:', e);
+        console.error('WebSocket Error:', e);
       }
     };
 
-    ws.onerror = (err) => {
-      console.error('❌ [WebSocket] Error:', err);
-    };
+    ws.onerror = console.error;
+    ws.onclose = () => console.warn('WebSocket closed');
 
-    ws.onclose = () => {
-      console.warn('⚠️ [WebSocket] Connection closed');
-    };
-
-    return () => {
-      ws.close();
-      console.log('🛑 [WebSocket] Closed on cleanup');
-    };
+    return () => ws.close();
   }, [roomId, excalidrawAPI]);
 
+  // ---------------------- Drawing Change Sync ----------------------
   const handleChange = (elements: readonly any[]) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-
     if (sendElements.current) clearTimeout(sendElements.current);
+
     sendElements.current = setTimeout(() => {
-      const payload = {
+      wsRef.current?.send(JSON.stringify({
         type: 'drawing',
         roomId,
         elements,
         clientId: clientId.current,
-      };
-      //console.log('📤 [Drawing] Sending elements to server:', payload);
-      wsRef.current?.send(JSON.stringify(payload));
+      }));
     }, 150);
   };
 
+  // ---------------------- Pointer Sync ----------------------
   const handlePointerUpdate = (payload: any) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
 
-    const cursorPayload = {
+    wsRef.current.send(JSON.stringify({
       type: 'cursor',
       clientId: clientId.current,
       roomId,
       pointer: payload.pointer,
       color: userColor.current,
       username: username.current,
-    };
-
-    wsRef.current.send(JSON.stringify(cursorPayload));
-    //console.log('📤 [Cursor] Sent pointer update:', cursorPayload);
+    }));
   };
 
+  // ---------------------- Save Drawing to DB ----------------------
+  const handleSaveToServer = async () => {
+    const token = localStorage.getItem('token');
+    const elements = excalidrawAPI?.getSceneElements();
+    if (!token || !elements || !roomId) return;
+
+    setSaveStatus('saving');
+    try {
+      const res = await fetch(`http://localhost:5000/chats/${roomId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `${token}`
+        },
+        body: JSON.stringify({ message: JSON.stringify(elements) })
+      });
+
+      if (!res.ok) throw new Error('Save failed');
+      setSaveStatus('saved');
+      setTimeout(() => setSaveStatus('idle'), 1500);
+    } catch (e) {
+      console.error('Save error:', e);
+      setSaveStatus('idle');
+    }
+  };
+
+  // ---------------------- Share Logic ----------------------
+  const handleShare = () => {
+    setShowShare(true);
+    setCopied(false);
+  };
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(window.location.href);
+    setCopied(true);
+    setTimeout(() => setShowShare(false), 1000);
+  };
+  const handleCloseShare = () => setShowShare(false);
+
   return (
-    <div style={{ position: 'fixed', inset: 0 }}>
+    <div className="fixed inset-0">
       <Excalidraw
-        excalidrawAPI={(api) => {
-          //console.log('🔧 [Excalidraw] API ready');
-          setExcalidrawAPI(api);
-        }}
+        excalidrawAPI={setExcalidrawAPI}
         theme="light"
         onChange={handleChange}
         onPointerUpdate={handlePointerUpdate}
@@ -152,53 +191,76 @@ export default function CanvasPage() {
             saveAsImage: true,
             saveToActiveFile: true,
           },
+          dockedSidebarBreakpoint: 0,
         }}
       />
-      
-      {/* Custom cursor overlay */}
-      <div style={{ 
-        position: 'absolute', 
-        top: 0, 
-        left: 0, 
-        right: 0, 
-        bottom: 0, 
-        pointerEvents: 'none',
-        zIndex: 1000 
-      }}>
+
+      {/* Buttons (bottom center) */}
+      <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-white/90 backdrop-blur-md px-4 py-2 rounded-xl shadow-lg">
+        <button
+          onClick={handleSaveToServer}
+          disabled={saveStatus === 'saving'}
+          className={`text-sm font-semibold rounded-lg px-4 py-1.5 shadow transition-all duration-200
+            ${saveStatus === 'saved' ? 'bg-yellow-300 text-slate-800' : 'bg-blue-600 text-white'}
+            ${saveStatus === 'saving' ? 'opacity-60 cursor-not-allowed' : 'hover:bg-blue-700'}
+          `}
+        >
+          {saveStatus === 'saved' ? 'Saved!' : 'Save'}
+        </button>
+
+        <button
+          onClick={handleShare}
+          className="text-sm font-semibold text-blue-600 border border-blue-600 rounded-lg px-4 py-1.5 bg-white hover:bg-blue-50 shadow transition-all duration-200"
+        >
+          Share
+        </button>
+
+        {saveStatus === 'saved' && (
+          <span className="text-xs font-medium text-slate-700 bg-yellow-200 px-2.5 py-1 rounded-md shadow-sm">
+            Saved to DB!
+          </span>
+        )}
+      </div>
+
+      {/* Share Popup */}
+      {showShare && (
+        <div className="absolute bottom-20 left-1/2 -translate-x-1/2 bg-white border border-slate-200 rounded-lg shadow-xl p-4 w-72 z-50">
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-sm font-semibold text-blue-600">Share this canvas</span>
+            <button onClick={handleCloseShare} className="text-lg text-slate-500 hover:text-slate-700">×</button>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={window.location.href}
+              readOnly
+              onFocus={(e) => e.target.select()}
+              className="flex-1 text-sm px-2.5 py-1.5 rounded-md border border-slate-300 bg-slate-100 text-slate-700"
+            />
+            <button
+              onClick={handleCopyLink}
+              className={`text-sm px-3 py-1.5 rounded-md font-medium shadow transition-all duration-200
+                ${copied ? 'bg-green-500 text-white' : 'bg-blue-600 text-white hover:bg-blue-700'}
+              `}
+            >
+              {copied ? 'Copied!' : 'Copy'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Cursor Indicators */}
+      <div className="absolute inset-0 pointer-events-none z-50">
         {Object.values(remoteCursors).map((cursor) => (
           <div
             key={cursor.clientId}
-            style={{
-              position: 'absolute',
-              left: cursor.x,
-              top: cursor.y,
-              width: '20px',
-              height: '20px',
-              borderRadius: '50%',
-              backgroundColor: cursor.color,
-              border: '2px solid white',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
-              transform: 'translate(-50%, -50%)',
-              pointerEvents: 'none',
-            }}
+            className="absolute -translate-x-1/2 -translate-y-1/2"
+            style={{ left: cursor.x, top: cursor.y }}
           >
-            <div
-              style={{
-                position: 'absolute',
-                top: '-25px',
-                left: '50%',
-                transform: 'translateX(-50%)',
-                backgroundColor: cursor.color,
-                color: 'white',
-                padding: '2px 6px',
-                borderRadius: '4px',
-                fontSize: '12px',
-                whiteSpace: 'nowrap',
-                fontWeight: 'bold',
-              }}
-            >
+            <div className="absolute top-[-30px] left-1/2 -translate-x-1/2 text-white text-xs font-semibold px-2 py-1 rounded bg-opacity-80 shadow" style={{ backgroundColor: cursor.color }}>
               {cursor.username}
             </div>
+            <div className="w-4 h-4 rounded-full border-2 border-white shadow" style={{ backgroundColor: cursor.color }} />
           </div>
         ))}
       </div>
@@ -206,25 +268,20 @@ export default function CanvasPage() {
   );
 }
 
-// 🔁 Manual merge logic to ensure collaborative drawing sync
-function mergeElements(
-  existing: readonly any[],
-  incoming: any[]
-): any[] {
+// 🔁 Merge helper
+function mergeElements(existing: readonly any[], incoming: any[]): any[] {
   const map = new Map<string, any>();
   existing.forEach(el => map.set(el.id, el));
-
   for (const el of incoming) {
     const existingEl = map.get(el.id);
     if (!existingEl || el.version > existingEl.version) {
       map.set(el.id, el);
     }
   }
-
   return Array.from(map.values()).filter(el => !el.isDeleted);
 }
 
-// 🎨 Generate random color for cursor
+// 🎨 Cursor color generator
 function getRandomColor(): string {
   const colors = ['#FF4C4C', '#4CFF4C', '#4C4CFF', '#FFAA00', '#00CFFF', '#FF00DD'];
   return colors[Math.floor(Math.random() * colors.length)];
