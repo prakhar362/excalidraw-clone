@@ -74,6 +74,19 @@ function startWebSocketServer() {
                             }
                         });
                         break;
+                    case 'cursor':
+                        users.forEach(u => {
+                            if (u.ws !== ws && u.rooms.includes(roomId)) {
+                                u.ws.send(JSON.stringify({
+                                    type: 'cursor',
+                                    roomId,
+                                    pointer: parsed.pointer,
+                                    clientId: parsed.clientId,
+                                    color: parsed.color
+                                }));
+                            }
+                        });
+                        break;
                 }
             }
             catch (e) {
