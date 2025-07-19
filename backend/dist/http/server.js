@@ -30,7 +30,7 @@ function createExpressApp() {
     app.use(express_1.default.json());
     app.use((0, cors_1.default)({
         origin: [
-            'https://your-frontend.vercel.app',
+            'https://sketchcalibur.vercel.app',
             'http://localhost:3000'
         ],
         credentials: true
