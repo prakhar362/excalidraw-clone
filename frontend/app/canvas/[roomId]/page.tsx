@@ -4,6 +4,7 @@ import dynamic from 'next/dynamic';
 import { useEffect, useRef, useState } from 'react';
 import '@excalidraw/excalidraw/index.css';
 import { useParams } from 'next/navigation';
+import { BACKEND_URL, WSS_URL } from '../../../config';
 
 const Excalidraw = dynamic(
   () => import('@excalidraw/excalidraw').then((mod) => mod.Excalidraw),
@@ -39,7 +40,7 @@ export default function CanvasPage() {
 
     username.current = storedUsername || `User-${clientId.current.slice(0, 4)}`;
 
-    fetch(`http://localhost:5000/chats/${roomId}`)
+    fetch(`${BACKEND_URL}/chats/${roomId}`)
       .then(res => res.json())
       .then(data => {
         const history = data.messages || [];
@@ -70,7 +71,7 @@ export default function CanvasPage() {
     const token = localStorage.getItem('token');
     if (!token || !roomId) return;
 
-    const ws = new WebSocket(`ws://localhost:5000?token=${token}`);
+    const ws = new WebSocket(`${WSS_URL}?token=${token}`);
     wsRef.current = ws;
 
     ws.onopen = () => {
@@ -147,7 +148,7 @@ export default function CanvasPage() {
 
     setSaveStatus('saving');
     try {
-      const res = await fetch(`http://localhost:5000/chats/${roomId}`, {
+      const res = await fetch(`${BACKEND_URL}/chats/${roomId}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

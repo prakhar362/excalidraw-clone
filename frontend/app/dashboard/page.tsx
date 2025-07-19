@@ -25,6 +25,8 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { UserPlusIcon, UsersIcon, PencilIcon } from "lucide-react";
+import { BACKEND_URL } from '../../config';
+import { Skeleton } from '@/components/ui/skeleton';
 
 interface Room {
   _id: string;
@@ -43,6 +45,8 @@ export default function DashboardPage() {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [newRoomName, setNewRoomName] = useState('');
   const [creating, setCreating] = useState(false);
+  const [loadingCanvasId, setLoadingCanvasId] = useState<string | null>(null);
+  const [canvasError, setCanvasError] = useState<string | null>(null);
 
   const toastOptions = {
     position: 'top-right' as const,
@@ -52,7 +56,7 @@ export default function DashboardPage() {
 
   const fetchRooms = async () => {
     try {
-      const res = await axios.get('http://localhost:5000/my-rooms', {
+      const res = await axios.get(`${BACKEND_URL}/my-rooms`, {
         headers: { Authorization: token || '' },
       });
       setRooms(res.data.rooms);
@@ -75,7 +79,7 @@ export default function DashboardPage() {
     setCreating(true);
     try {
       await axios.post(
-        'http://localhost:5000/create-room',
+        `${BACKEND_URL}/create-room`,
         { name: newRoomName },
         { headers: { Authorization: token || '' } }
       );
@@ -93,7 +97,7 @@ export default function DashboardPage() {
   const joinRoom = async () => {
     if (!roomSlug) return;
     try {
-      const res = await axios.get(`http://localhost:5000/room/${roomSlug}`);
+      const res = await axios.get(`${BACKEND_URL}/room/${roomSlug}`);
       const { room } = res.data;
       if (room && room._id) {
         router.push(`/canvas/${room._id}`);
@@ -115,7 +119,7 @@ export default function DashboardPage() {
     if (!collabUsername || !selectedRoom) return;
     try {
       const res = await axios.post(
-        `http://localhost:5000/rooms/${selectedRoom._id}/add-collaborator`,
+        `${BACKEND_URL}/rooms/${selectedRoom._id}/add-collaborator`,
         { username: collabUsername },
         { headers: { Authorization: token || '' } }
       );
@@ -218,11 +222,31 @@ export default function DashboardPage() {
                         <Button
                           className="w-full flex items-center justify-center gap-2 py-3 text-lg font-semibold rounded-xl bg-white border-black  text-black  hover:bg-zinc-400 transition"
                           variant="ghost"
-                          onClick={() => router.push(`/canvas/${room._id}`)}
+                          onClick={async () => {
+                            setLoadingCanvasId(room._id);
+                            setCanvasError(null);
+                            try {
+                              // Optionally, you could check room existence here with an API call
+                              await router.push(`/canvas/${room._id}`);
+                            } catch (e) {
+                              setCanvasError('Failed to open canvas. Please try again.');
+                              setLoadingCanvasId(null);
+                            }
+                          }}
+                          disabled={loadingCanvasId === room._id}
                         >
                           <PencilIcon className="w-5 h-5" />
                           <span className="whitespace-normal text-center">Open Canvas</span>
                         </Button>
+                        {loadingCanvasId === room._id && (
+                          <div className="flex justify-center items-center mt-2">
+                            <Skeleton className="h-8 w-32" />
+                            <span className="ml-2 text-gray-600">Loading...</span>
+                          </div>
+                        )}
+                        {canvasError && (
+                          <div className="text-red-500 text-sm mt-2">{canvasError}</div>
+                        )}
 
                         <Dialog>
                           <DialogTrigger asChild>

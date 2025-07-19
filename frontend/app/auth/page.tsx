@@ -23,6 +23,7 @@ import { Eye, EyeOff } from 'lucide-react';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css'
 import 'react-toastify/dist/ReactToastify.css';
+import { BACKEND_URL } from '../../config';
 
 function AuthPage() {
   const router = useRouter();
@@ -91,8 +92,8 @@ function AuthPage() {
     try {
       const endpoint =
         activeTab === 'signup'
-          ? 'http://localhost:5000/signup'
-          : 'http://localhost:5000/login';
+          ? `${BACKEND_URL}/signup`
+          : `${BACKEND_URL}/login`;
       // Prepare payload based on tab
       let payload;
       if (activeTab === 'signup') {
