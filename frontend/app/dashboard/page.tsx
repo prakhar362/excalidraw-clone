@@ -90,8 +90,20 @@ export default function DashboardPage() {
     }
   };
 
-  const joinRoom = () => {
-    if (roomSlug) router.push(`/canvas/${roomSlug}`);
+  const joinRoom = async () => {
+    if (!roomSlug) return;
+    try {
+      const res = await axios.get(`http://localhost:5000/room/${roomSlug}`);
+      const { room } = res.data;
+      if (room && room._id) {
+        router.push(`/canvas/${room._id}`);
+        console.log("Yes found");
+      } else {
+        toast.error("Room not found", toastOptions);
+      }
+    } catch (e) {
+      toast.error("Room not found", toastOptions);
+    }
   };
 
   const logout = () => {
