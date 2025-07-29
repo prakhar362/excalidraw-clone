@@ -22,6 +22,7 @@ const middleware_1 = require("./middleware");
 const User_1 = require("../models/User");
 const Room_1 = require("../models/Room");
 const Chat_1 = require("../models/Chat");
+const nodemailer_1 = __importDefault(require("nodemailer"));
 dotenv_1.default.config();
 const JWT_SECRET = process.env.JWT_SECRET;
 const MONGO_URI = process.env.MONGO_URI;
@@ -133,13 +134,42 @@ function createExpressApp() {
     // ---------------------- ADD COLLABORATOR TO ROOM ----------------------
     app.post('/rooms/:roomId/add-collaborator', middleware_1.middleware, (req, res) => __awaiter(this, void 0, void 0, function* () {
         const { roomId } = req.params;
-        const { username } = req.body;
-        if (!username)
-            return res.status(400).json({ message: 'Username is required' });
+        const { username, useremail } = req.body;
+        if (!username || !useremail)
+            return res.status(400).json({ message: 'Username or User email is required' });
         try {
             const userToAdd = yield User_1.User.findOne({ name: username });
-            if (!userToAdd)
-                return res.status(404).json({ message: 'No such user found' });
+            if (!userToAdd) {
+                // Fetch the room to get the slug
+                const room = yield Room_1.Room.findById(roomId);
+                if (!room) {
+                    return res.status(404).json({ message: 'Room not found' });
+                }
+                // Send invitation email using nodemailer
+                try {
+                    const transporter = nodemailer_1.default.createTransport({
+                        host: 'smtp.gmail.com',
+                        port: 465,
+                        secure: true,
+                        auth: {
+                            user: process.env.GMAIL_USER,
+                            pass: process.env.GMAIL_PASS,
+                        },
+                    });
+                    const mailOptions = {
+                        from: process.env.GMAIL_USER,
+                        to: useremail,
+                        subject: `Invitation to join SketchCalibur Room`,
+                        text: `Hello,\n\nYou have been invited to join the room '${room.slug}' on SketchCalibur. Please create an account using this email to join the room as a collaborator.\n\nBest regards,\nSketchCalibur Team`,
+                    };
+                    yield transporter.sendMail(mailOptions);
+                    return res.status(404).json({ message: 'No such user found, but an invitation email has been sent to create an account and join the room!' });
+                }
+                catch (mailErr) {
+                    console.error('Failed to send invitation email:', mailErr);
+                    return res.status(404).json({ message: 'No such user found, and failed to send invitation email.' });
+                }
+            }
             const room = yield Room_1.Room.findById(roomId);
             if (!room)
                 return res.status(404).json({ message: 'Room not found' });

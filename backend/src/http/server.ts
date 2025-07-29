@@ -8,6 +8,7 @@ import { middleware } from './middleware';
 import { User } from '../models/User';
 import { Room } from '../models/Room';
 import { Chat } from '../models/Chat';
+import nodemailer from 'nodemailer';
 
 dotenv.config();
 
@@ -131,13 +132,43 @@ app.get('/room/:slug', async (req, res) => {
 // ---------------------- ADD COLLABORATOR TO ROOM ----------------------
 app.post('/rooms/:roomId/add-collaborator', middleware, async (req, res) => {
   const { roomId } = req.params;
-  const { username } = req.body;
+  const { username, useremail } = req.body;
 
-  if (!username) return res.status(400).json({ message: 'Username is required' });
+  if (!username || !useremail) return res.status(400).json({ message: 'Username or User email is required' });
 
   try {
     const userToAdd = await User.findOne({ name: username });
-    if (!userToAdd) return res.status(404).json({ message: 'No such user found' });
+    if (!userToAdd) {
+      // Fetch the room to get the slug
+      const room = await Room.findById(roomId);
+      if (!room) {
+        return res.status(404).json({ message: 'Room not found' });
+      }
+      // Send invitation email using nodemailer
+      try {
+        const transporter = nodemailer.createTransport({
+          host: 'smtp.gmail.com',
+          port: 465,
+          secure: true,
+          auth: {
+            user: process.env.GMAIL_USER!,
+            pass: process.env.GMAIL_PASS!,
+          },
+        });
+        const mailOptions = {
+          from: process.env.GMAIL_USER,
+          to: useremail,
+          subject: `Invitation to join SketchCalibur Room`,
+          text: `Hello,\n\nYou have been invited to join the room '${room.slug}' on SketchCalibur. Please create an account using this email to join the room as a collaborator.\n\nBest regards,\nSketchCalibur Team`,
+        };
+        await transporter.sendMail(mailOptions);
+        return res.status(404).json({ message: 'No such user found, but an invitation email has been sent to create an account and join the room!' });
+        
+      } catch (mailErr) {
+        console.error('Failed to send invitation email:', mailErr);
+        return res.status(404).json({ message: 'No such user found, and failed to send invitation email.' });
+      }
+    }
 
     const room = await Room.findById(roomId);
     if (!room) return res.status(404).json({ message: 'Room not found' });

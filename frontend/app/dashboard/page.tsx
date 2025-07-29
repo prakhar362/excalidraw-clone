@@ -40,6 +40,7 @@ export default function DashboardPage() {
   const [roomSlug, setRoomSlug] = useState('');
   const [rooms, setRooms] = useState<Room[]>([]);
   const [collabUsername, setCollabUsername] = useState('');
+  const [collabUseremail,setCollabUseremail]=useState('');
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -116,18 +117,27 @@ export default function DashboardPage() {
   };
 
   const addCollaborator = async () => {
-    if (!collabUsername || !selectedRoom) return;
+    if (!collabUsername || !collabUseremail || !selectedRoom) return;
     try {
       const res = await axios.post(
         `${BACKEND_URL}/rooms/${selectedRoom._id}/add-collaborator`,
-        { username: collabUsername },
+        { username: collabUsername,
+          useremail: collabUseremail
+         },
         { headers: { Authorization: token || '' } }
       );
       toast.success(res.data.message || 'Collaborator added!', toastOptions);
       setCollabUsername('');
+      setCollabUseremail('');
       setSelectedRoom(null);
     } catch (e: any) {
-      toast.error(e?.response?.data?.message || 'No such user', toastOptions);
+      const msg = e?.response?.data?.message;
+      console.log(msg);
+      if (msg && msg.includes('invitation email has been sent')) {
+        alert(msg);
+      } else {
+        toast.error(msg || 'No such user', toastOptions);
+      }
     }
   };
 
@@ -268,6 +278,12 @@ export default function DashboardPage() {
                                 placeholder="Enter username"
                                 value={collabUsername}
                                 onChange={(e) => setCollabUsername(e.target.value)}
+                              />
+                              <Label>Email</Label>
+                              <Input
+                                placeholder="Enter user email"
+                                value={collabUseremail}
+                                onChange={(e) => setCollabUseremail(e.target.value)}
                               />
                             </div>
                             <Button className="w-full" onClick={addCollaborator}>
