@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  # Backend Service
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: backend_service
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./backend/src:/usr/src/app/src # Mount src for live-reloading
+    env_file:
+      - ./backend/.env
+    restart: unless-stopped
+
+  # Frontend Service
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: frontend_service
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app # Mount entire folder for live-reloading
+      - /app/node_modules
+      - /app/.next
+    environment:
+      # This is how the frontend talks to the backend inside Docker
+      NEXT_PUBLIC_API_URL: http://backend:5000
+    depends_on:
+      - backend
+    restart: unless-stopped
