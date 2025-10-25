@@ -1,37 +1,35 @@
- # ---- Base Stage ----
+# ---- Base Stage ----
 FROM node:20-alpine AS base
 WORKDIR /app
 
 # ---- Dependencies Stage ----
+# Install all dependencies to build the project
 FROM base AS deps
 COPY package.json package-lock.json* ./
 RUN npm install --frozen-lockfile
 
 # ---- Build Stage ----
+# Build the Next.js application
 FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-# Environment variables can be passed at build time
-# ARG NEXT_PUBLIC_API_URL
-# ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 RUN npm run build
 
 # ---- Production Stage ----
+# This is the final image, containing only what's needed for production
 FROM base AS production
 ENV NODE_ENV=production
-WORKDIR /app
 
-# Copy production-ready files from the builder stage
+# Copy package.json and install ONLY production dependencies
+COPY package.json package-lock.json* ./
+RUN npm install --omit=dev --frozen-lockfile
+
+# Copy the built application and public assets from the builder stage
+COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
-COPY --from=builder /app/package.json ./package.json
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
-# Expose port 3000
+# Expose the port the app runs on
 EXPOSE 3000
 
-# Set the user to run the app (good security practice)
-USER nextjs
-
-# The command to start the Next.js server
-CMD ["node", "server.js"]
+# The command to start the application in production
+CMD ["npm", "start"]
