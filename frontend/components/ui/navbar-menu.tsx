@@ -1,8 +1,9 @@
 "use client";
-import React from "react";
-import { motion } from "framer-motion"; // Note: changed to framer-motion for standard imports
+import React, { useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { Menu as MenuIcon, X } from "lucide-react";
 
 const transition = {
   type: "spring",
@@ -20,45 +21,68 @@ export const Menu = ({
   setActive: (item: string | null) => void;
   children: React.ReactNode;
 }) => {
+  const [isOpen, setIsOpen] = useState(false);
+
   return (
     <nav
       onMouseLeave={() => setActive(null)}
-      className="relative rounded-full text-wrap border border-black/[0.2] dark:border-white/[0.2] dark:bg-black bg-white shadow-input flex items-center justify-between px-8 py-4 w-full max-w-7xl mx-auto mt-4"
+      className="relative mx-auto mt-4 flex w-[calc(100%-2rem)] max-w-7xl items-center justify-between rounded-full border border-black/[0.2] bg-white px-8 py-4 shadow-input dark:border-white/[0.2] dark:bg-black"
     >
-      {/* LEFT: LOGO SECTION */}
-      <Link href="/" className="flex items-center gap-2 group">
+      {/* LEFT: LOGO */}
+      <Link href="/" className="flex shrink-0 items-center gap-2 group">
         <div className="h-8 w-8 bg-black dark:bg-white rounded-lg flex items-center justify-center transition-transform group-hover:rotate-6">
-          {/* Simple Pen/Sketch Icon */}
-          <svg 
-            width="20" height="20" viewBox="0 0 24 24" fill="none" 
-            stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" 
-            className="text-white dark:text-black"
-          >
-            <path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-            <path d="M18.375 2.625a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4Z" />
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-white dark:text-black">
+            <path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.375 2.625a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4Z" />
           </svg>
         </div>
-        
+        <span className="font-bold text-md text-black dark:text-white md:hidden xs:block">Sketchcalibur</span>
       </Link>
 
-      {/* CENTER: NAV ITEMS */}
-      <div className="flex items-center space-x-6">
+      {/* CENTER: DESKTOP NAV ITEMS (Unchanged for Desktop) */}
+      <div className="hidden md:flex items-center space-x-6">
         {children}
       </div>
 
-      {/* RIGHT: AUTH SECTION */}
-      <div className="flex items-center gap-4">
-        <Link href="/auth">
-          <Button variant="default" className="rounded-full px-6 bg-black dark:bg-white dark:text-black hover:opacity-90 transition-opacity">
-            Sign up
-          </Button>
-        </Link>
+      {/* RIGHT: AUTH & MOBILE TOGGLE */}
+      <div className="flex items-center gap-3">
+        <div className="hidden sm:block">
+          <Link href="/auth">
+            <Button variant="default" className="rounded-full px-6 bg-black dark:bg-white dark:text-black">
+              Sign up
+            </Button>
+          </Link>
+        </div>
+
+        {/* Hamburger Icon - Only Mobile */}
+        <button 
+          onClick={() => setIsOpen(!isOpen)}
+          className="md:hidden p-2 text-black dark:text-white"
+        >
+          {isOpen ? <X size={24} /> : <MenuIcon size={24} />}
+        </button>
       </div>
+
+      {/* MOBILE MENU DRAWER */}
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="absolute top-full left-0 right-0 mt-3 p-4 bg-white dark:bg-black border border-black/[0.1] dark:border-white/[0.1] rounded-3xl shadow-xl md:hidden flex flex-col gap-4 z-50"
+          >
+            <div className="flex flex-col items-start gap-4 px-4 py-2">
+              {children}
+            </div>
+            <Link href="/auth" className="w-full px-2 pb-2">
+              <Button className="w-full rounded-xl">Get Started</Button>
+            </Link>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </nav>
   );
 };
-
-// ... MenuItem, ProductItem, and HoveredLink remain the same as your previous code ...
 
 export const MenuItem = ({
   setActive,
@@ -72,37 +96,36 @@ export const MenuItem = ({
   children?: React.ReactNode;
 }) => {
   return (
-    <div onMouseEnter={() => setActive(item)} className="relative">
+    <div 
+      onMouseEnter={() => setActive(item)} 
+      onClick={() => setActive(item)} // Helpful for mobile touch
+      className="relative"
+    >
       <motion.p
         transition={{ duration: 0.3 }}
         className="cursor-pointer text-black hover:opacity-[0.9] dark:text-white font-medium"
       >
         {item}
       </motion.p>
-      {active !== null && (
+      {active === item && (
         <motion.div
           initial={{ opacity: 0, scale: 0.85, y: 10 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           transition={transition}
+          className="absolute top-[calc(100%_+_1.2rem)] left-1/2 transform -translate-x-1/2 md:pt-4 z-[100]"
         >
-          {active === item && (
-            <div className="absolute top-[calc(100%_+_1.2rem)] left-1/2 transform -translate-x-1/2 pt-4">
-              <motion.div
-                transition={transition}
-                layoutId="active"
-                className="bg-white dark:bg-black backdrop-blur-sm rounded-2xl overflow-hidden border border-black/[0.2] dark:border-white/[0.2] shadow-xl"
-              >
-                <motion.div layout className="w-max h-full p-4">
-                  {children}
-                </motion.div>
-              </motion.div>
+          <div className="bg-white dark:bg-black backdrop-blur-sm rounded-2xl overflow-hidden border border-black/[0.2] dark:border-white/[0.2] shadow-xl">
+            <div className="w-max h-full p-4">
+              {children}
             </div>
-          )}
+          </div>
         </motion.div>
       )}
     </div>
   );
 };
+
+
 export const HoveredLink = ({ children, ...rest }: any) => {
   return (
     <a
