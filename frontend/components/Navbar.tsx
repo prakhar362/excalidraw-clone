@@ -21,10 +21,9 @@ export default function Navbar({ className }: { className?: string }) {
         </MenuItem>
         <MenuItem setActive={setActive} active={active} item="Testimonials" href="#testimonials" >
           <div className="flex flex-col space-y-4 text-sm">
-            <HoveredLink href="/hobby">Hobby</HoveredLink>
-            <HoveredLink href="/individual">Individual</HoveredLink>
-            <HoveredLink href="/team">Team</HoveredLink>
-            <HoveredLink href="/enterprise">Enterprise</HoveredLink>
+            <HoveredLink href="#testimonials">Hobby</HoveredLink>
+            <HoveredLink href="#testimonials">Individual</HoveredLink>
+            <HoveredLink href="#testimonials">Team</HoveredLink>
           </div>
         </MenuItem>
         <MenuItem setActive={setActive} active={active} item="FAQs" href="#FAQs" >
