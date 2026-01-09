@@ -89,11 +89,13 @@ export const MenuItem = ({
   active,
   item,
   children,
+  href
 }: {
   setActive: (item: string) => void;
   active: string | null;
   item: string;
   children?: React.ReactNode;
+  href?: string;
 }) => {
   return (
     <div 
@@ -101,12 +103,23 @@ export const MenuItem = ({
       onClick={() => setActive(item)} // Helpful for mobile touch
       className="relative"
     >
-      <motion.p
-        transition={{ duration: 0.3 }}
-        className="cursor-pointer text-black hover:opacity-[0.9] dark:text-white font-medium"
-      >
-        {item}
-      </motion.p>
+     {href ? (
+        <Link href={href}>
+          <motion.p
+            transition={{ duration: 0.3 }}
+            className="cursor-pointer text-black hover:opacity-[0.9] dark:text-white font-light"
+          >
+            {item}
+          </motion.p>
+        </Link>
+      ) : (
+        <motion.p
+          transition={{ duration: 0.3 }}
+          className="cursor-pointer text-black hover:opacity-[0.9] dark:text-white font-medium"
+        >
+          {item}
+        </motion.p>
+      )}
       {active === item && (
         <motion.div
           initial={{ opacity: 0, scale: 0.85, y: 10 }}
