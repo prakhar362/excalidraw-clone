@@ -6,6 +6,7 @@ import { Features } from "@/components/features";
 import Discover from "@/components/features-section-demo-3";
 import { Testimonials } from "@/components/Testimonials";
 import FAQWithSpiral from "@/components/faq-section";
+import Cta  from "@/components/cta";
 
 export default function Home() {
   return (
@@ -16,6 +17,7 @@ export default function Home() {
       <Discover/>
       <Testimonials/>
       <FAQWithSpiral/>
+      <Cta/>
     </div>
   );
 }
