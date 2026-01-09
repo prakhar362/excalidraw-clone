@@ -3,6 +3,7 @@ import { Icons } from "@/components/ui/icons";
 import Navbar  from "@/components/Navbar";
 import { Hero } from "@/components/hero";
 import { Features } from "@/components/features";
+import Discover from "@/components/features-section-demo-3";
 
 export default function Home() {
   return (
@@ -10,7 +11,7 @@ export default function Home() {
       <Navbar className="top-5" />
       <Hero/>
       <Features/>
-     
+      <Discover/>
     </div>
   );
 }
