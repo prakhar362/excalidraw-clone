@@ -1,9 +1,12 @@
 "use client";
 import React, { useState } from "react";
+import { useTheme } from "next-themes";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Menu as MenuIcon, X } from "lucide-react";
+import { Menu as MenuIcon, Sun, X,Moon } from "lucide-react";
+import { Switch } from "./switch";
+import { Label } from "./label";
 
 const transition = {
   type: "spring",
@@ -22,6 +25,15 @@ export const Menu = ({
   children: React.ReactNode;
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const { theme, setTheme } = useTheme();
+  const [isDarkMode, setIsDarkMode] = React.useState(true)
+  React.useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.add("dark")
+    } else {
+      document.documentElement.classList.remove("dark")
+    }
+  }, [isDarkMode])
 
   return (
     <nav
@@ -38,6 +50,19 @@ export const Menu = ({
         <span className="font-bold text-md text-black dark:text-white md:hidden xs:block">Sketchcalibur</span>
       </Link>
 
+     <Button
+      variant="ghost"
+      size="icon"
+      onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+      aria-label="Toggle theme"
+    >
+      {theme === "dark" ? (
+        <Sun className="h-5 w-5" />
+      ) : (
+        <Moon className="h-5 w-5" />
+      )}
+    </Button>
+
       {/* CENTER: DESKTOP NAV ITEMS (Unchanged for Desktop) */}
       <div className="hidden md:flex items-center space-x-6">
         {children}
@@ -52,6 +77,7 @@ export const Menu = ({
             </Button>
           </Link>
         </div>
+      
 
         {/* Hamburger Icon - Only Mobile */}
         <button 

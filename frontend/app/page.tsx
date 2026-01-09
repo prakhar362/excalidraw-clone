@@ -7,6 +7,7 @@ import Discover from "@/components/features-section-demo-3";
 import { Testimonials } from "@/components/Testimonials";
 import FAQWithSpiral from "@/components/faq-section";
 import Cta  from "@/components/cta";
+import { Footerdemo } from "@/components/ui/footer-section";
 
 export default function Home() {
   return (
@@ -18,6 +19,7 @@ export default function Home() {
       <Testimonials/>
       <FAQWithSpiral/>
       <Cta/>
+      <Footerdemo/>
     </div>
   );
 }
