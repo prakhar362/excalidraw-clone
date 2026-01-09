@@ -4,6 +4,7 @@ import Navbar  from "@/components/Navbar";
 import { Hero } from "@/components/hero";
 import { Features } from "@/components/features";
 import Discover from "@/components/features-section-demo-3";
+import { Testimonials } from "@/components/Testimonials";
 
 export default function Home() {
   return (
@@ -12,6 +13,7 @@ export default function Home() {
       <Hero/>
       <Features/>
       <Discover/>
+      <Testimonials/>
     </div>
   );
 }
