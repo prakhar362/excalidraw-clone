@@ -40,5 +40,16 @@ const userSchema = new mongoose_1.Schema({
     password: { type: String, required: true },
     name: { type: String, required: true },
     photo: { type: String, default: null },
+    googleId: {
+        type: String,
+        default: null,
+    },
+    authProvider: {
+        type: String,
+        enum: ["local", "google"],
+        required: true,
+        default: "local",
+    },
 }, { timestamps: true });
+userSchema.index({ email: 1 }, { unique: true });
 exports.User = mongoose_1.default.model('User', userSchema);

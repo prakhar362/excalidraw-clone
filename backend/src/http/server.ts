@@ -3,6 +3,8 @@ import jwt from 'jsonwebtoken';
 import cors from 'cors';
 import bcrypt from 'bcrypt';
 import mongoose from 'mongoose';
+import passport from "passport";
+import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import dotenv from 'dotenv';
 import { middleware } from './middleware';
 import { User } from '../models/User';
@@ -11,6 +13,47 @@ import { Chat } from '../models/Chat';
 import nodemailer from 'nodemailer';
 
 dotenv.config();
+passport.use(
+  new GoogleStrategy(
+    {
+      clientID: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      callbackURL: "/auth/google/callback",
+    },
+    async (_accessToken, _refreshToken, profile, done) => {
+      try {
+        const email = profile.emails?.[0].value;
+
+        if (!email) {
+          return done(new Error("No email returned from Google"), undefined);
+        }
+
+        let user = await User.findOne({ email });
+
+        // 🔁 Account linking
+        if (!user) {
+          user = await User.create({
+            email,
+            name: profile.displayName,
+            password: "GOOGLE_OAUTH", // placeholder
+            googleId: profile.id,
+            authProvider: "google", 
+          });
+
+
+        } else if (!user.googleId) {
+          user.googleId = profile.id;
+          user.authProvider = "google";
+          await user.save();
+        }
+
+        return done(null, user);
+      } catch (err) {
+        return done(err as Error, undefined);
+      }
+    }
+  )
+);
 
 const JWT_SECRET = process.env.JWT_SECRET!;
 const MONGO_URI = process.env.MONGO_URI!;
@@ -19,6 +62,8 @@ const MONGO_URI = process.env.MONGO_URI!;
 export function createExpressApp() {
   const app = express();
   app.use(express.json());
+  app.use(passport.initialize());
+
   app.use(cors({
     origin: [
       'https://sketchcalibur.vercel.app',
@@ -32,45 +77,96 @@ export function createExpressApp() {
   });
 
 // ---------------------- SIGNUP ----------------------
-app.post('/signup', async (req, res) => {
+app.post("/signup", async (req, res) => {
   const { email, password, name } = req.body;
+
   if (!email || !password || !name) {
-    return res.status(400).json({ message: 'Missing inputs' });
+    return res.status(400).json({ message: "Missing inputs" });
   }
 
   try {
     const existing = await User.findOne({ email });
-    if (existing) return res.status(409).json({ message: 'Email already exists' });
+
+    //  Email already exists
+    if (existing) {
+      // Google account exists → tell user what to do
+      if (existing.authProvider === "google") {
+        return res.status(409).json({
+          message: "Account exists. Please sign up using Google",
+        });
+      }
+
+      return res.status(409).json({ message: "Email already exists" });
+    }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const user = await User.create({ email, password: hashedPassword, name });
 
-    res.json({ userId: user._id });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ message: 'Server error' });
+    const user = await User.create({
+      email,
+      password: hashedPassword,
+      name,
+      authProvider: "local",
+    });
+
+    return res.status(201).json({ userId: user._id });
+  } catch (err) {
+    console.error("Signup error:", err);
+    return res.status(500).json({ message: "Server error" });
   }
 });
 
+
 // ---------------------- LOGIN ----------------------
-app.post('/login', async (req, res) => {
+app.post("/login", async (req, res) => {
   const { email, password } = req.body;
-  if (!email || !password) return res.status(400).json({ message: 'Missing inputs' });
+
+  if (!email || !password) {
+    return res.status(400).json({ message: "Missing inputs" });
+  }
 
   try {
     const user = await User.findOne({ email });
-    if (!user) return res.status(403).json({ message: 'Not authorized' });
 
-    const valid = await bcrypt.compare(password, user.password);
-    if (!valid) return res.status(403).json({ message: 'Not authorized' });
+    // ❌ User not found
+    if (!user) {
+      return res.status(403).json({ message: "Invalid email or password" });
+    }
 
-    const token = jwt.sign({ userId: user._id }, JWT_SECRET);
-    res.json({ token });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ message: 'Server error' });
+    // 🔐 Google-only account
+    if (user.authProvider === "google") {
+      return res.status(403).json({
+        message: "This account uses Google sign-in",
+      });
+    }
+
+    // 🔐 Local account but password missing (edge safety)
+    if (!user.password) {
+      return res.status(403).json({
+        message: "Password login unavailable for this account",
+      });
+    }
+
+    const validPassword = await bcrypt.compare(password, user.password);
+
+    // ❌ Wrong password
+    if (!validPassword) {
+      return res.status(403).json({ message: "Invalid email or password" });
+    }
+
+    // ✅ Success
+    const token = jwt.sign(
+      { userId: user._id },
+      JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    return res.json({ token });
+  } catch (err) {
+    console.error("Login error:", err);
+    return res.status(500).json({ message: "Server error" });
   }
 });
+
 
 // ---------------------- CREATE ROOM ----------------------
 app.post('/create-room', middleware, async (req: any, res) => {
@@ -221,6 +317,39 @@ app.post('/chats/:roomId', middleware, async (req: any, res) => {
     res.status(500).json({ message: 'Failed to store drawing' });
   }
 });
+
+// ---------------------- GOOGLE AUTH ----------------------
+app.get(
+  "/auth/google",
+  passport.authenticate("google", {
+    scope: ["profile", "email"],
+    session: false,
+  })
+);
+
+// backend/routes/auth.ts (or your main file)
+
+app.get(
+  "/auth/google/callback",
+  passport.authenticate("google", {
+    session: false,
+    failureRedirect: "https://sketchcalibur.vercel.app/auth", // Redirect on fail
+  }),
+  (req, res) => {
+    const user = req.user as any;
+
+    const token = jwt.sign(
+      { userId: user._id },
+      JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    // 🚀 REDIRECT back to frontend with the token in the URL
+    // Use your production URL here
+    const frontendUrl = "https://sketchcalibur.vercel.app/dashboard"; 
+    return res.redirect(`${frontendUrl}?token=${token}`);
+  }
+);
 
   return app;
 }

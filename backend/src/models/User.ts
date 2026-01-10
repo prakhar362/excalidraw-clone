@@ -6,6 +6,8 @@ export interface IUser extends Document {
   password: string;
   name: string;
   photo?: string;
+  googleId?: string;
+  authProvider: "local" | "google";
 }
 
 const userSchema = new Schema<IUser>({
@@ -13,6 +15,18 @@ const userSchema = new Schema<IUser>({
   password: { type: String, required: true },
   name: { type: String, required: true },
   photo: { type: String, default: null },
+   googleId: {
+      type: String,
+      default: null,
+    },
+    authProvider: {
+      type: String,
+      enum: ["local", "google"],
+      required: true,
+      default: "local",
+    },
+
 }, { timestamps: true });
 
+userSchema.index({ email: 1 }, { unique: true });
 export const User = mongoose.model<IUser>('User', userSchema);

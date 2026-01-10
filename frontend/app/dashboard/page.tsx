@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -24,7 +24,7 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
-import { UserPlusIcon, UsersIcon, PencilIcon } from "lucide-react";
+import { UserPlusIcon, PencilIcon } from "lucide-react";
 import { BACKEND_URL } from '../../config';
 import { Skeleton } from '@/components/ui/skeleton';
 
@@ -37,12 +37,15 @@ interface Room {
 
 export default function DashboardPage() {
   const router = useRouter();
+  const searchParams = useSearchParams(); 
+  
+  // --- States ---
+  const [token, setToken] = useState<string | null>(null);
   const [roomSlug, setRoomSlug] = useState('');
   const [rooms, setRooms] = useState<Room[]>([]);
   const [collabUsername, setCollabUsername] = useState('');
-  const [collabUseremail,setCollabUseremail]=useState('');
+  const [collabUseremail, setCollabUseremail] = useState('');
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
-  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [newRoomName, setNewRoomName] = useState('');
   const [creating, setCreating] = useState(false);
@@ -55,39 +58,65 @@ export default function DashboardPage() {
     theme: 'dark' as const,
   };
 
-  const fetchRooms = async () => {
+  // 1. Handle Token from URL (Google Auth Callback)
+  useEffect(() => {
+    const urlToken = searchParams.get('token');
+    if (urlToken) {
+      localStorage.setItem('token', urlToken);
+      setToken(urlToken);
+      router.replace('/dashboard'); 
+      toast.success("Logged in with Google!", toastOptions);
+    } else {
+      // Fallback to existing local storage if no URL token
+      const savedToken = localStorage.getItem('token');
+      if (savedToken) setToken(savedToken);
+    }
+  }, [searchParams]);
+
+  // 2. Auth Guard and Room Polling
+  useEffect(() => {
+    // Check if we are in browser environment
+    const storedToken = localStorage.getItem('token');
+    
+    if (!storedToken && !searchParams.get('token')) {
+      router.push('/auth');
+      return;
+    }
+
+    if (storedToken) {
+        fetchRooms(storedToken);
+        const interval = setInterval(() => fetchRooms(storedToken), 5000);
+        return () => clearInterval(interval);
+    }
+  }, [token]); // Re-run if token state changes
+  
+  const fetchRooms = async (activeToken?: string) => {
+    const requestToken = activeToken || token || localStorage.getItem('token');
+    if (!requestToken) return;
+
     try {
       const res = await axios.get(`${BACKEND_URL}/my-rooms`, {
-        headers: { Authorization: token || '' },
+        headers: { Authorization: requestToken },
       });
       setRooms(res.data.rooms);
-    } catch {
-      toast.error('Failed to fetch rooms', toastOptions);
+    } catch (err) {
+      console.error("Fetch rooms failed", err);
     }
   };
 
-  useEffect(() => {
-    if (!token) router.push('/auth');
-    else {
-      fetchRooms();
-      const interval = setInterval(fetchRooms, 5000);
-      return () => clearInterval(interval);
-    }
-  }, []);
-
   const handleCreateRoom = async () => {
-    if (!newRoomName) return;
+    if (!newRoomName || !token) return;
     setCreating(true);
     try {
       await axios.post(
         `${BACKEND_URL}/create-room`,
         { name: newRoomName },
-        { headers: { Authorization: token || '' } }
+        { headers: { Authorization: token } }
       );
       toast.success('Room created!', toastOptions);
       setNewRoomName('');
       setShowCreateDialog(false);
-      fetchRooms();
+      fetchRooms(token);
     } catch (e: any) {
       toast.error(e?.response?.data?.message || 'Error creating room', toastOptions);
     } finally {
@@ -102,7 +131,6 @@ export default function DashboardPage() {
       const { room } = res.data;
       if (room && room._id) {
         router.push(`/canvas/${room._id}`);
-        console.log("Yes found");
       } else {
         toast.error("Room not found", toastOptions);
       }
@@ -113,18 +141,17 @@ export default function DashboardPage() {
 
   const logout = () => {
     localStorage.removeItem('token');
+    setToken(null);
     router.push('/auth');
   };
 
   const addCollaborator = async () => {
-    if (!collabUsername || !collabUseremail || !selectedRoom) return;
+    if (!collabUsername || !collabUseremail || !selectedRoom || !token) return;
     try {
       const res = await axios.post(
         `${BACKEND_URL}/rooms/${selectedRoom._id}/add-collaborator`,
-        { username: collabUsername,
-          useremail: collabUseremail
-         },
-        { headers: { Authorization: token || '' } }
+        { username: collabUsername, useremail: collabUseremail },
+        { headers: { Authorization: token } }
       );
       toast.success(res.data.message || 'Collaborator added!', toastOptions);
       setCollabUsername('');
@@ -132,7 +159,6 @@ export default function DashboardPage() {
       setSelectedRoom(null);
     } catch (e: any) {
       const msg = e?.response?.data?.message;
-      console.log(msg);
       if (msg && msg.includes('invitation email has been sent')) {
         alert(msg);
       } else {
@@ -141,13 +167,23 @@ export default function DashboardPage() {
     }
   };
 
+  // Helper to parse JWT safely
+  const getUserIdFromToken = () => {
+    if (!token) return null;
+    try {
+        return JSON.parse(atob(token.split(".")[1])).userId;
+    } catch (e) {
+        return null;
+    }
+  }
+
   return (
     <SidebarProvider>
       <AppSidebar onLogout={logout} />
       <SidebarInset>
         <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4 bg-white sticky top-0 z-10">
           <SidebarTrigger className="-ml-1" />
-          <Separator orientation="vertical" className="mr-2 data-[orientation=vertical]:h-4" />
+          <Separator orientation="vertical" className="mr-2 h-4" />
           <Breadcrumb>
             <BreadcrumbList>
               <BreadcrumbItem className="hidden md:block">
@@ -184,8 +220,8 @@ export default function DashboardPage() {
             </Dialog>
           </div>
         </header>
+
         <div className="flex flex-1 flex-col gap-4 p-4">
-          {/* Join Room Section */}
           <section className="bg-white p-5 rounded-md shadow-sm border space-y-3 max-w-xl mx-auto w-full">
             <h2 className="text-lg sm:text-xl font-semibold">Join a Room</h2>
             <div className="flex flex-col sm:flex-row items-center gap-3">
@@ -198,11 +234,8 @@ export default function DashboardPage() {
             </div>
           </section>
 
-          {/* Rooms List Section */}
           <section>
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4">
-              <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Your Rooms</h2>
-            </div>
+            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight mb-4">Your Rooms</h2>
             {rooms.length === 0 ? (
               <div className="flex justify-center py-12">
                 <p className="text-sm text-muted-foreground">No rooms found.</p>
@@ -210,64 +243,41 @@ export default function DashboardPage() {
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 sm:gap-8">
                 {rooms.map((room) => (
-                  <Card
-                    key={room._id}
-                    className="bg-[#ffffff] text-white border border-zinc-800 shadow-xl rounded-2xl p-8 min-h-[320px] w-full flex flex-col items-center justify-between transition-transform hover:scale-[1.02]"
-                  >
+                  <Card key={room._id} className="bg-white border-zinc-800 shadow-xl rounded-2xl p-8 min-h-[320px] flex flex-col items-center justify-between transition-transform hover:scale-[1.02]">
                     <CardHeader className="w-full flex flex-col items-center pb-2">
-                      <CardTitle className="text-xl font-bold text-black mb-1 text-center truncate w-full">
-                      {room.slug}
+                      <CardTitle className="text-xl font-bold text-black text-center truncate w-full">
+                        {room.slug}
                       </CardTitle>
                     </CardHeader>
 
                     <CardContent className="flex flex-col flex-1 items-center justify-center w-full">
-                      <p className="text-base text-gray-800 mb-8 text-center w-full">
-                        <span className="font-semibold text-gray-800">Role:</span>{" "}
-                        {room.adminId === JSON.parse(atob(token!.split(".")[1])).userId
-                          ? "Admin"
-                          : "Member"}
+                      <p className="text-base text-gray-800 mb-8">
+                        <span className="font-semibold">Role:</span>{" "}
+                        {room.adminId === getUserIdFromToken() ? "Admin" : "Member"}
                       </p>
 
-                      <div className="flex flex-col gap-4 w-full mt-2">
+                      <div className="flex flex-col gap-4 w-full">
                         <Button
-                          className="w-full flex items-center justify-center gap-2 py-3 text-lg font-semibold rounded-xl bg-white border-black  text-black  hover:bg-zinc-400 transition"
-                          variant="ghost"
-                          onClick={async () => {
+                          className="w-full flex items-center justify-center gap-2 py-3 text-lg font-semibold bg-white border-black text-black hover:bg-zinc-100"
+                          variant="outline"
+                          onClick={() => {
                             setLoadingCanvasId(room._id);
-                            setCanvasError(null);
-                            try {
-                              // Optionally, you could check room existence here with an API call
-                              await router.push(`/canvas/${room._id}`);
-                            } catch (e) {
-                              setCanvasError('Failed to open canvas. Please try again.');
-                              setLoadingCanvasId(null);
-                            }
+                            router.push(`/canvas/${room._id}`);
                           }}
                           disabled={loadingCanvasId === room._id}
                         >
                           <PencilIcon className="w-5 h-5" />
-                          <span className="whitespace-normal text-center">Open Canvas</span>
+                          Open Canvas
                         </Button>
-                        {loadingCanvasId === room._id && (
-                          <div className="flex justify-center items-center mt-2">
-                            <Skeleton className="h-8 w-32" />
-                            <span className="ml-2 text-gray-600">Loading...</span>
-                          </div>
-                        )}
-                        {canvasError && (
-                          <div className="text-red-500 text-sm mt-2">{canvasError}</div>
-                        )}
 
                         <Dialog>
                           <DialogTrigger asChild>
                             <Button
-                              className="w-full flex items-center justify-center gap-2 py-3 text-lg font-semibold rounded-xl bg-zinc-900 text-white border border-zinc-700 hover:bg-zinc-200 transition"
-                              variant="outline"
+                              className="w-full flex items-center justify-center gap-2 py-3 text-lg font-semibold bg-zinc-900 text-white hover:bg-zinc-800"
                               onClick={() => setSelectedRoom(room)}
                             >
-                              
                               <UserPlusIcon className="w-5 h-5" />
-                              <span className="whitespace-normal text-center">Add</span>
+                              Add
                             </Button>
                           </DialogTrigger>
                           <DialogContent className="space-y-4">

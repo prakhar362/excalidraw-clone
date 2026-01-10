@@ -17,6 +17,8 @@ const express_1 = __importDefault(require("express"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const cors_1 = __importDefault(require("cors"));
 const bcrypt_1 = __importDefault(require("bcrypt"));
+const passport_1 = __importDefault(require("passport"));
+const passport_google_oauth20_1 = require("passport-google-oauth20");
 const dotenv_1 = __importDefault(require("dotenv"));
 const middleware_1 = require("./middleware");
 const User_1 = require("../models/User");
@@ -24,11 +26,45 @@ const Room_1 = require("../models/Room");
 const Chat_1 = require("../models/Chat");
 const nodemailer_1 = __importDefault(require("nodemailer"));
 dotenv_1.default.config();
+passport_1.default.use(new passport_google_oauth20_1.Strategy({
+    clientID: process.env.GOOGLE_CLIENT_ID,
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+    callbackURL: "/auth/google/callback",
+}, (_accessToken, _refreshToken, profile, done) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    try {
+        const email = (_a = profile.emails) === null || _a === void 0 ? void 0 : _a[0].value;
+        if (!email) {
+            return done(new Error("No email returned from Google"), undefined);
+        }
+        let user = yield User_1.User.findOne({ email });
+        // 🔁 Account linking
+        if (!user) {
+            user = yield User_1.User.create({
+                email,
+                name: profile.displayName,
+                password: "GOOGLE_OAUTH", // placeholder
+                googleId: profile.id,
+                authProvider: "google",
+            });
+        }
+        else if (!user.googleId) {
+            user.googleId = profile.id;
+            user.authProvider = "google";
+            yield user.save();
+        }
+        return done(null, user);
+    }
+    catch (err) {
+        return done(err, undefined);
+    }
+})));
 const JWT_SECRET = process.env.JWT_SECRET;
 const MONGO_URI = process.env.MONGO_URI;
 function createExpressApp() {
     const app = (0, express_1.default)();
     app.use(express_1.default.json());
+    app.use(passport_1.default.initialize());
     app.use((0, cors_1.default)({
         origin: [
             'https://sketchcalibur.vercel.app',
@@ -40,42 +76,73 @@ function createExpressApp() {
         res.send('http server backend running');
     });
     // ---------------------- SIGNUP ----------------------
-    app.post('/signup', (req, res) => __awaiter(this, void 0, void 0, function* () {
+    app.post("/signup", (req, res) => __awaiter(this, void 0, void 0, function* () {
         const { email, password, name } = req.body;
         if (!email || !password || !name) {
-            return res.status(400).json({ message: 'Missing inputs' });
+            return res.status(400).json({ message: "Missing inputs" });
         }
         try {
             const existing = yield User_1.User.findOne({ email });
-            if (existing)
-                return res.status(409).json({ message: 'Email already exists' });
+            //  Email already exists
+            if (existing) {
+                // Google account exists → tell user what to do
+                if (existing.authProvider === "google") {
+                    return res.status(409).json({
+                        message: "Account exists. Please sign up using Google",
+                    });
+                }
+                return res.status(409).json({ message: "Email already exists" });
+            }
             const hashedPassword = yield bcrypt_1.default.hash(password, 10);
-            const user = yield User_1.User.create({ email, password: hashedPassword, name });
-            res.json({ userId: user._id });
+            const user = yield User_1.User.create({
+                email,
+                password: hashedPassword,
+                name,
+                authProvider: "local",
+            });
+            return res.status(201).json({ userId: user._id });
         }
-        catch (e) {
-            console.error(e);
-            res.status(500).json({ message: 'Server error' });
+        catch (err) {
+            console.error("Signup error:", err);
+            return res.status(500).json({ message: "Server error" });
         }
     }));
     // ---------------------- LOGIN ----------------------
-    app.post('/login', (req, res) => __awaiter(this, void 0, void 0, function* () {
+    app.post("/login", (req, res) => __awaiter(this, void 0, void 0, function* () {
         const { email, password } = req.body;
-        if (!email || !password)
-            return res.status(400).json({ message: 'Missing inputs' });
+        if (!email || !password) {
+            return res.status(400).json({ message: "Missing inputs" });
+        }
         try {
             const user = yield User_1.User.findOne({ email });
-            if (!user)
-                return res.status(403).json({ message: 'Not authorized' });
-            const valid = yield bcrypt_1.default.compare(password, user.password);
-            if (!valid)
-                return res.status(403).json({ message: 'Not authorized' });
-            const token = jsonwebtoken_1.default.sign({ userId: user._id }, JWT_SECRET);
-            res.json({ token });
+            // ❌ User not found
+            if (!user) {
+                return res.status(403).json({ message: "Invalid email or password" });
+            }
+            // 🔐 Google-only account
+            if (user.authProvider === "google") {
+                return res.status(403).json({
+                    message: "This account uses Google sign-in",
+                });
+            }
+            // 🔐 Local account but password missing (edge safety)
+            if (!user.password) {
+                return res.status(403).json({
+                    message: "Password login unavailable for this account",
+                });
+            }
+            const validPassword = yield bcrypt_1.default.compare(password, user.password);
+            // ❌ Wrong password
+            if (!validPassword) {
+                return res.status(403).json({ message: "Invalid email or password" });
+            }
+            // ✅ Success
+            const token = jsonwebtoken_1.default.sign({ userId: user._id }, JWT_SECRET, { expiresIn: "7d" });
+            return res.json({ token });
         }
-        catch (e) {
-            console.error(e);
-            res.status(500).json({ message: 'Server error' });
+        catch (err) {
+            console.error("Login error:", err);
+            return res.status(500).json({ message: "Server error" });
         }
     }));
     // ---------------------- CREATE ROOM ----------------------
@@ -213,5 +280,22 @@ function createExpressApp() {
             res.status(500).json({ message: 'Failed to store drawing' });
         }
     }));
+    // ---------------------- GOOGLE AUTH ----------------------
+    app.get("/auth/google", passport_1.default.authenticate("google", {
+        scope: ["profile", "email"],
+        session: false,
+    }));
+    // backend/routes/auth.ts (or your main file)
+    app.get("/auth/google/callback", passport_1.default.authenticate("google", {
+        session: false,
+        failureRedirect: "https://sketchcalibur.vercel.app/auth", // Redirect on fail
+    }), (req, res) => {
+        const user = req.user;
+        const token = jsonwebtoken_1.default.sign({ userId: user._id }, JWT_SECRET, { expiresIn: "7d" });
+        // 🚀 REDIRECT back to frontend with the token in the URL
+        // Use your production URL here
+        const frontendUrl = "https://sketchcalibur.vercel.app/dashboard";
+        return res.redirect(`${frontendUrl}?token=${token}`);
+    });
     return app;
 }
