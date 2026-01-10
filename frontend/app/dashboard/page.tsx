@@ -1,5 +1,5 @@
 'use client';
-
+import { Suspense } from 'react';
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import axios from 'axios';
@@ -178,6 +178,11 @@ export default function DashboardPage() {
   }
 
   return (
+    // This allows Next.js to prerender the rest of the site 
+    // while waiting for the client-side search params
+    <Suspense fallback={<div>Loading Dashboard...</div>}>
+      
+    
     <SidebarProvider>
       <AppSidebar onLogout={logout} />
       <SidebarInset>
@@ -311,5 +316,6 @@ export default function DashboardPage() {
         </div>
       </SidebarInset>
     </SidebarProvider>
+    </Suspense>
   );
 }
