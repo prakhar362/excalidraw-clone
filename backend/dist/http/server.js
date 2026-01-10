@@ -30,6 +30,7 @@ passport_1.default.use(new passport_google_oauth20_1.Strategy({
     clientID: process.env.GOOGLE_CLIENT_ID,
     clientSecret: process.env.GOOGLE_CLIENT_SECRET,
     callbackURL: "/auth/google/callback",
+    proxy: true,
 }, (_accessToken, _refreshToken, profile, done) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
     try {
@@ -63,6 +64,7 @@ const JWT_SECRET = process.env.JWT_SECRET;
 const MONGO_URI = process.env.MONGO_URI;
 function createExpressApp() {
     const app = (0, express_1.default)();
+    app.set("trust proxy", 1);
     app.use(express_1.default.json());
     app.use(passport_1.default.initialize());
     app.use((0, cors_1.default)({

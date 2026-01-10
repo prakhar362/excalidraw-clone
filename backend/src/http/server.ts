@@ -62,6 +62,7 @@ const MONGO_URI = process.env.MONGO_URI!;
 
 export function createExpressApp() {
   const app = express();
+  app.set("trust proxy", 1);
   app.use(express.json());
   app.use(passport.initialize());
 
