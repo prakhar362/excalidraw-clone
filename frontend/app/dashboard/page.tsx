@@ -1,6 +1,6 @@
 'use client';
-import { Suspense } from 'react';
-import { useEffect, useState } from 'react';
+
+import { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
@@ -35,11 +35,11 @@ interface Room {
   adminId: string;
 }
 
-export default function DashboardPage() {
+// 1. Create a "Content" component for the logic
+function DashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams(); 
   
-  // --- States ---
   const [token, setToken] = useState<string | null>(null);
   const [roomSlug, setRoomSlug] = useState('');
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -58,7 +58,6 @@ export default function DashboardPage() {
     theme: 'dark' as const,
   };
 
-  // 1. Handle Token from URL (Google Auth Callback)
   useEffect(() => {
     const urlToken = searchParams.get('token');
     if (urlToken) {
@@ -67,17 +66,13 @@ export default function DashboardPage() {
       router.replace('/dashboard'); 
       toast.success("Logged in with Google!", toastOptions);
     } else {
-      // Fallback to existing local storage if no URL token
       const savedToken = localStorage.getItem('token');
       if (savedToken) setToken(savedToken);
     }
   }, [searchParams]);
 
-  // 2. Auth Guard and Room Polling
   useEffect(() => {
-    // Check if we are in browser environment
     const storedToken = localStorage.getItem('token');
-    
     if (!storedToken && !searchParams.get('token')) {
       router.push('/auth');
       return;
@@ -88,7 +83,7 @@ export default function DashboardPage() {
         const interval = setInterval(() => fetchRooms(storedToken), 5000);
         return () => clearInterval(interval);
     }
-  }, [token]); // Re-run if token state changes
+  }, [token]);
   
   const fetchRooms = async (activeToken?: string) => {
     const requestToken = activeToken || token || localStorage.getItem('token');
@@ -159,15 +154,10 @@ export default function DashboardPage() {
       setSelectedRoom(null);
     } catch (e: any) {
       const msg = e?.response?.data?.message;
-      if (msg && msg.includes('invitation email has been sent')) {
-        alert(msg);
-      } else {
-        toast.error(msg || 'No such user', toastOptions);
-      }
+      toast.error(msg || 'No such user', toastOptions);
     }
   };
 
-  // Helper to parse JWT safely
   const getUserIdFromToken = () => {
     if (!token) return null;
     try {
@@ -178,11 +168,6 @@ export default function DashboardPage() {
   }
 
   return (
-    // This allows Next.js to prerender the rest of the site 
-    // while waiting for the client-side search params
-    <Suspense fallback={<div>Loading Dashboard...</div>}>
-      
-    
     <SidebarProvider>
       <AppSidebar onLogout={logout} />
       <SidebarInset>
@@ -248,7 +233,7 @@ export default function DashboardPage() {
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 sm:gap-8">
                 {rooms.map((room) => (
-                  <Card key={room._id} className="bg-white border-zinc-800 shadow-xl rounded-2xl p-8 min-h-[320px] flex flex-col items-center justify-between transition-transform hover:scale-[1.02]">
+                  <Card key={room._id} className="bg-white border-zinc-800 shadow-xl rounded-2xl p-8 min-h-[320px] flex flex-col items-center justify-between">
                     <CardHeader className="w-full flex flex-col items-center pb-2">
                       <CardTitle className="text-xl font-bold text-black text-center truncate w-full">
                         {room.slug}
@@ -263,8 +248,7 @@ export default function DashboardPage() {
 
                       <div className="flex flex-col gap-4 w-full">
                         <Button
-                          className="w-full flex items-center justify-center gap-2 py-3 text-lg font-semibold bg-white border-black text-black hover:bg-zinc-100"
-                          variant="outline"
+                          className="w-full flex items-center justify-center gap-2 py-3 text-lg font-semibold"
                           onClick={() => {
                             setLoadingCanvasId(room._id);
                             router.push(`/canvas/${room._id}`);
@@ -278,7 +262,7 @@ export default function DashboardPage() {
                         <Dialog>
                           <DialogTrigger asChild>
                             <Button
-                              className="w-full flex items-center justify-center gap-2 py-3 text-lg font-semibold bg-zinc-900 text-white hover:bg-zinc-800"
+                              className="w-full flex items-center justify-center gap-2 py-3 text-lg font-semibold bg-zinc-900 text-white"
                               onClick={() => setSelectedRoom(room)}
                             >
                               <UserPlusIcon className="w-5 h-5" />
@@ -316,6 +300,21 @@ export default function DashboardPage() {
         </div>
       </SidebarInset>
     </SidebarProvider>
+  );
+}
+
+// 2. Wrap the Content in Suspense as the default export
+export default function DashboardPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex h-screen w-screen items-center justify-center bg-white">
+        <div className="flex flex-col items-center gap-4">
+          <Skeleton className="h-12 w-12 rounded-full" />
+          <p className="text-zinc-500 animate-pulse">Initializing Dashboard...</p>
+        </div>
+      </div>
+    }>
+      <DashboardContent />
     </Suspense>
   );
 }
