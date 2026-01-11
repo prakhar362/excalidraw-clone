@@ -1,112 +1,110 @@
-import * as React from "react"
+"use client";
+import React, { useState } from "react";
+import { Sidebar, SidebarBody, SidebarLink } from "@/components/ui/sidebar"; // Adjust path to your UI folder
 import {
-  Sidebar,
-  SidebarContent,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
-  SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarRail,
-} from "@/components/ui/sidebar"
-import { UserPlusIcon, UsersIcon, PencilIcon,PencilRuler } from "lucide-react";
+  IconArrowLeft,
+  IconBrandTabler,
+  IconSettings,
+  IconUserBolt,
+  IconMoon,
+  IconSun,
+} from "@tabler/icons-react";
+import { motion } from "framer-motion";
+import { useTheme } from "next-themes";
+import { PencilRuler } from "lucide-react";
 
-export function AppSidebar({
-  onLogout,
-  ...props
-}: React.ComponentProps<typeof Sidebar> & { onLogout?: () => void }) {
+export function AppSidebar({ onLogout }: { onLogout: () => void }) {
+  const { theme, setTheme } = useTheme();
+  const [open, setOpen] = useState(false);
+
+  const links = [
+    {
+      label: "Dashboard",
+      href: "/dashboard",
+      icon: (
+        <IconBrandTabler className="h-5 w-5 shrink-0 text-neutral-700 dark:text-neutral-200" />
+      ),
+    },
+    {
+      label: "Profile",
+      href: "#",
+      icon: (
+        <IconUserBolt className="h-5 w-5 shrink-0 text-neutral-700 dark:text-neutral-200" />
+      ),
+    },
+    {
+      label: "Settings",
+      href: "#",
+      icon: (
+        <IconSettings className="h-5 w-5 shrink-0 text-neutral-700 dark:text-neutral-200" />
+      ),
+    },
+    // Theme Toggle Link
+    {
+      label: theme === "dark" ? "Light Mode" : "Dark Mode",
+      href: "#",
+      onClick: () => setTheme(theme === "dark" ? "light" : "dark"),
+      icon: theme === "dark" ? (
+        <IconSun className="h-5 w-5 shrink-0 text-neutral-700 dark:text-neutral-200" />
+      ) : (
+        <IconMoon className="h-5 w-5 shrink-0 text-neutral-700 dark:text-neutral-200" />
+      ),
+    },
+    {
+      label: "Logout",
+      href: "#",
+      onClick: onLogout,
+      icon: (
+        <IconArrowLeft className="h-5 w-5 shrink-0 text-neutral-700 dark:text-neutral-200" />
+      ),
+    },
+  ];
+
   return (
-    <Sidebar {...props}>
-      {/* Header with Excalidraw branding */}
-<SidebarHeader className="flex px-4 py-4 border-b border-gray-200">
-  <div className="flex items-center gap-2">
-    <PencilRuler className="w-5 h-5 text-gray-700" />
-    <h1 className="text-2xl font-bold text-black tracking-tight">Sketchcalibur</h1>
-  </div>
-</SidebarHeader>
-      {/* Sidebar content */}
-      <SidebarContent className="overflow-y-auto">
-        {/* Dummy Group 1 */}
-        <SidebarGroup>
-          <SidebarGroupLabel>Tools</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild>
-                  <a href="#">Color Picker</a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild>
-                  <a href="#">Layer Manager</a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        {/* Dummy Group 2 */}
-        <SidebarGroup>
-          <SidebarGroupLabel>Features</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild>
-                  <a href="#">Live Cursors</a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild>
-                  <a href="#">Auto Sync</a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild>
-                  <a href="#">Export to PDF</a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        {/* Dummy Group 3 */}
-        <SidebarGroup>
-          <SidebarGroupLabel>Coming Soon</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild>
-                  <a href="#">AI Suggestions</a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild>
-                  <a href="#">Voice Notes</a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild>
-                  <a href="#">3D Mode</a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-      </SidebarContent>
-
-      {/* Logout at the bottom */}
-      <div className="p-4 mt-auto border-t border-gray-200">
-        <button
-          onClick={onLogout}
-          className="w-full bg-white hover:bg-red-700 hover:text-white text-red-700 font-semibold py-2 px-4 rounded-lg shadow transition-all duration-200"
-        >
-          Logout
-        </button>
-      </div>
-
-      <SidebarRail />
+    <Sidebar open={open} setOpen={setOpen}>
+      <SidebarBody className="justify-between gap-10">
+        <div className="flex flex-1 flex-col overflow-x-hidden overflow-y-auto">
+          {open ? <Logo /> : <PencilRuler className="w-5 h-5 text-black dark:text-amber-50" /> }
+          <div className="mt-8 flex flex-col gap-2">
+            {links.map((link, idx) => (
+              <SidebarLink 
+                key={idx} 
+                link={link} 
+                className="cursor-pointer"
+                // Adding custom onClick handler support if your SidebarLink supports it
+                // If not, we wrap it or handle it inside the SidebarLink component
+                onClick={link.onClick} 
+              />
+            ))}
+          </div>
+        </div>
+        <div>
+          <SidebarLink
+            link={{
+              label: "User Profile",
+              href: "#",
+              icon: (
+                <img
+                  src="https://assets.aceternity.com/manu.png"
+                  className="h-7 w-7 shrink-0 rounded-full"
+                  alt="Avatar"
+                />
+              ),
+            }}
+          />
+        </div>
+      </SidebarBody>
     </Sidebar>
-  )
+  );
 }
+
+const Logo = () => (
+  <a href="#" className="relative z-20 flex items-center space-x-2 py-1 text-sm font-normal text-black dark:text-white">
+    
+    <PencilRuler className="w-5 h-5 text-black dark:text-amber-50" /> 
+    <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="font-medium whitespace-pre text-2xl ">
+      SketchCalibur
+    </motion.span>
+  </a>
+);
+
