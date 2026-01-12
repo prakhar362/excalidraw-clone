@@ -223,12 +223,7 @@ app.get('/me', middleware, async (req: any, res) => {
     }
     console.log(user);
     res.json({
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        photo: user.photo,
-      }
+      user
     });
     
   } catch (e) {
@@ -237,6 +232,23 @@ app.get('/me', middleware, async (req: any, res) => {
   }
 });
 
+// ---------------------- UPDATE LOGGED IN USER DATA ----------------------
+app.post('/me', middleware, async (req: any, res) => {
+  try {
+    const { name, photo } = req.body;
+    const userId = req.userId;
+
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { name, photo },
+      { new: true }
+    ).select('-password');
+
+    res.json({ message: 'Profile updated', user: updatedUser });
+  } catch (e) {
+    res.status(500).json({ message: 'Error updating profile' });
+  }
+});
 
 // ---------------------- GET CHATS ----------------------
 app.get('/chats/:roomId', async (req, res) => {

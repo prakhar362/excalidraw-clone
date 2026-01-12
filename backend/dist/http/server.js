@@ -197,17 +197,24 @@ function createExpressApp() {
             }
             console.log(user);
             res.json({
-                user: {
-                    id: user._id,
-                    name: user.name,
-                    email: user.email,
-                    photo: user.photo,
-                }
+                user
             });
         }
         catch (e) {
             console.error('Failed to fetch user:', e);
             res.status(500).json({ message: 'Internal server error' });
+        }
+    }));
+    // ---------------------- UPDATE LOGGED IN USER DATA ----------------------
+    app.post('/me', middleware_1.middleware, (req, res) => __awaiter(this, void 0, void 0, function* () {
+        try {
+            const { name, photo } = req.body;
+            const userId = req.userId;
+            const updatedUser = yield User_1.User.findByIdAndUpdate(userId, { name, photo }, { new: true }).select('-password');
+            res.json({ message: 'Profile updated', user: updatedUser });
+        }
+        catch (e) {
+            res.status(500).json({ message: 'Error updating profile' });
         }
     }));
     // ---------------------- GET CHATS ----------------------
