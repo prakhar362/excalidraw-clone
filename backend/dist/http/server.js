@@ -173,13 +173,41 @@ function createExpressApp() {
                     { adminId: userId },
                     { collaborators: userId }
                 ]
-            }).sort({ createdAt: -1 });
+            })
+                // We populate 'name' from the User collection linked to these IDs
+                .populate('adminId', 'name')
+                .populate('collaborators', 'name')
+                .sort({ createdAt: -1 });
             console.log(rooms);
             res.json({ rooms });
         }
         catch (e) {
-            console.error('Failed to fetch user rooms:', e);
+            console.error('Failed to fetch rooms:', e);
             res.status(500).json({ message: 'Failed to fetch rooms' });
+        }
+    }));
+    // ---------------------- GET LOGGED IN USER DATA ----------------------
+    app.get('/me', middleware_1.middleware, (req, res) => __awaiter(this, void 0, void 0, function* () {
+        try {
+            const userId = req.userId;
+            // Find user by ID but exclude the password field for security
+            const user = yield User_1.User.findById(userId).select('-password');
+            if (!user) {
+                return res.status(404).json({ message: 'User not found' });
+            }
+            console.log(user);
+            res.json({
+                user: {
+                    id: user._id,
+                    name: user.name,
+                    email: user.email,
+                    photo: user.photo,
+                }
+            });
+        }
+        catch (e) {
+            console.error('Failed to fetch user:', e);
+            res.status(500).json({ message: 'Internal server error' });
         }
     }));
     // ---------------------- GET CHATS ----------------------

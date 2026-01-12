@@ -3,6 +3,7 @@
 import { useEffect, useState, Suspense, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import axios from 'axios';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from 'react-toastify';
@@ -55,7 +56,7 @@ import {
   ChevronLeft,
   ChevronRight,
   PlusCircle,
-  Users
+  Share2
 } from "lucide-react";
 import { BACKEND_URL } from '../../config';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -65,22 +66,60 @@ interface Room {
   _id: string;
   slug: string;
   createdAt: string;
-  adminId: string;
-  collaborators?: any[]; // For user count
+  adminId: any; 
+  collaborators?: any[]; 
 }
+
+const UserTooltip = ({ users }: { users: { name: string; id: string }[] }) => {
+  const [hoveredIndex, setHoveredIndex] = useState<string | null>(null);
+  const bgColors = ['bg-pink-500', 'bg-violet-500', 'bg-blue-500', 'bg-emerald-500', 'bg-orange-500', 'bg-cyan-500'];
+
+  return (
+    <div className="flex flex-row items-center justify-start w-full">
+      {users.slice(0, 5).map((user, idx) => (
+        <div
+          className="-mr-3 relative group cursor-pointer"
+          key={user.id}
+          onMouseEnter={() => setHoveredIndex(user.id)}
+          onMouseLeave={() => setHoveredIndex(null)}
+        >
+          <AnimatePresence mode="popLayout">
+            {hoveredIndex === user.id && (
+              <motion.div
+                initial={{ opacity: 0, y: 10, scale: 0.9 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 10, scale: 0.9 }}
+                className="absolute -top-10 left-1/2 -translate-x-1/2 flex text-[10px] flex-col items-center justify-center rounded bg-black z-[100] shadow-xl px-2 py-1 whitespace-nowrap"
+              >
+                <div className="font-bold text-white uppercase tracking-tighter">{user.name}</div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+          <div className={cn(
+            "h-8 w-8 rounded-full border-2 border-white dark:border-neutral-900 flex items-center justify-center text-[11px] font-bold text-white uppercase shadow-sm transition-all duration-200 group-hover:scale-110 group-hover:z-30",
+            bgColors[idx % bgColors.length]
+          )}>
+            {user.name ? user.name.charAt(0) : "?"}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
 
 function DashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams(); 
-  
   const [token, setToken] = useState<string | null>(null);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [roomSlug, setRoomSlug] = useState('');
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
+  
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showAddUserDialog, setShowAddUserDialog] = useState(false);
+  const [userData, setUserData] = useState<{ name: string; photo?: string } | null>(null);
   const [newRoomName, setNewRoomName] = useState('');
   const [creating, setCreating] = useState(false);
   const [collabUsername, setCollabUsername] = useState('');
@@ -93,6 +132,7 @@ function DashboardContent() {
     if (savedToken) {
       setToken(savedToken);
       fetchRooms(savedToken);
+      fetchUserProfile(savedToken);
     } else {
       router.push('/auth');
     }
@@ -106,7 +146,23 @@ function DashboardContent() {
       setRooms(res.data.rooms);
     } catch (err) { console.error("Fetch failed", err); }
   };
-
+const fetchUserProfile = async (activeToken: string) => {
+  try {
+    const res = await axios.get(`${BACKEND_URL}/me`, {
+      headers: { Authorization: activeToken },
+    });
+    
+    if (res.data.user) {
+      setUserData({
+        name: res.data.user.name,
+        photo: res.data.user.photo || undefined, // handle null from DB
+      });
+    }
+  } catch (err) {
+    console.error("Failed to fetch profile:", err);
+    setUserData(null);
+  }
+};
   const getUserIdFromToken = () => {
     if (!token) return null;
     try { return JSON.parse(atob(token.split(".")[1])).userId; } catch (e) { return null; }
@@ -121,9 +177,8 @@ function DashboardContent() {
       setNewRoomName('');
       setShowCreateDialog(false);
       fetchRooms(token);
-    } catch (e: any) { 
-      toast.error(e?.response?.data?.message || 'Error creating room', toastOptions); 
-    } finally { setCreating(false); }
+    } catch (e: any) { toast.error('Error creating room', toastOptions); }
+    finally { setCreating(false); }
   };
 
   const joinRoom = async () => {
@@ -132,20 +187,6 @@ function DashboardContent() {
       const res = await axios.get(`${BACKEND_URL}/room/${roomSlug}`);
       if (res.data.room?._id) router.push(`/canvas/${res.data.room._id}`);
     } catch (e) { toast.error("Room not found", toastOptions); }
-  };
-
-  const deleteRoom = async (roomId: string) => {
-    if (!token) return;
-    try {
-      await axios.delete(`${BACKEND_URL}/room/${roomId}`, { headers: { Authorization: token } });
-      toast.success("Room deleted", toastOptions);
-      fetchRooms(token);
-    } catch (e) { toast.error("Delete failed", toastOptions); }
-  };
-
-  const logout = () => {
-    localStorage.removeItem('token');
-    router.push('/auth');
   };
 
   const columns: ColumnDef<Room>[] = useMemo(() => [
@@ -162,7 +203,9 @@ function DashboardContent() {
       id: "role",
       header: "Role",
       cell: ({ row }) => {
-        const isAdmin = row.original.adminId === getUserIdFromToken();
+        const currentUserId = getUserIdFromToken();
+        const room = row.original as any;
+        const isAdmin = (room.adminId?._id || room.adminId) === currentUserId;
         return (
           <div className={cn(
             "inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium",
@@ -177,13 +220,12 @@ function DashboardContent() {
       id: "users",
       header: "Current Users",
       cell: ({ row }) => {
-        const count = (row.original.collaborators?.length || 0) + 1; // +1 for admin
-        return (
-          <div className="flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400">
-            <Users className="h-4 w-4" />
-            {count}
-          </div>
-        );
+        const room = row.original as any;
+        const allUsers = [
+          { name: room.adminId?.name || "Admin", id: room.adminId?._id || "admin" },
+          ...(room.collaborators?.map((c: any) => ({ name: c.name || "User", id: c._id })) || [])
+        ];
+        return <UserTooltip users={allUsers} />;
       }
     },
     {
@@ -193,31 +235,56 @@ function DashboardContent() {
     },
     {
       id: "actions",
-      header: () => <div className="text-right">Actions</div>,
+      header: () => <div className="text-right pr-4">Actions</div>,
       cell: ({ row }) => {
         const room = row.original;
         return (
-          <div className="text-right">
-            <DropdownMenu>
+          <div className="text-right pr-2">
+            <DropdownMenu modal={false}>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="h-8 w-8 p-0"><MoreHorizontal className="h-4 w-4" /></Button>
+                <Button variant="ghost" className="h-8 w-8 p-0 outline-none hover:bg-neutral-100 dark:hover:bg-neutral-800">
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                <DropdownMenuItem onClick={() => router.push(`/canvas/${room._id}`)}>
+              <DropdownMenuContent align="end" className="w-52 z-[60] rounded-sm">
+                <DropdownMenuLabel>Room Actions</DropdownMenuLabel>
+                <DropdownMenuItem onSelect={() => router.push(`/canvas/${room._id}`)}>
                   <Pencil className="mr-2 h-4 w-4" /> Open Canvas
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => { setSelectedRoom(room); setShowAddUserDialog(true); }}>
-                  <UserPlus className="mr-2 h-4 w-4" /> Add User
+                
+                <DropdownMenuItem 
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    setSelectedRoom(room);
+                    setShowAddUserDialog(true);
+                  }}
+                >
+                  <UserPlus className="mr-2 h-4 w-4" /> Add Collaborator
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => {
-                   navigator.clipboard.writeText(`${window.location.origin}/canvas/${room._id}`);
-                   toast.success("Link copied!");
-                }}>
-                  <LinkIcon className="mr-2 h-4 w-4" /> Copy Link
+
+                <DropdownMenuItem 
+                  onSelect={() => {
+                    const link = `${window.location.origin}/canvas/${room._id}`;
+                    navigator.clipboard.writeText(link);
+                    toast.success("Share link copied to clipboard!", toastOptions);
+                  }}
+                >
+                  <Share2 className="mr-2 h-4 w-4" /> Copy Share Link
                 </DropdownMenuItem>
+
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => deleteRoom(room._id)} className="text-red-600 focus:text-red-600">
+                
+                <DropdownMenuItem 
+                  onSelect={() => {
+                    axios.delete(`${BACKEND_URL}/room/${room._id}`, { headers: { Authorization: token! } })
+                    .then(() => {
+                      toast.success("Room deleted successfully");
+                      fetchRooms(token!);
+                    })
+                    .catch(() => toast.error("Failed to delete room"));
+                  }} 
+                  className="text-red-600 focus:bg-red-50 dark:focus:bg-red-900/20"
+                >
                   <Trash className="mr-2 h-4 w-4" /> Delete Room
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -243,11 +310,10 @@ function DashboardContent() {
 
   return (
     <div className="mx-auto flex w-full flex-1 flex-col overflow-hidden border border-neutral-200 bg-gray-50 md:flex-row dark:border-neutral-700 dark:bg-neutral-900 h-screen">
-      <AppSidebar onLogout={logout} />
+      <AppSidebar onLogout={() => { localStorage.removeItem('token'); router.push('/auth'); }} user={userData} />
 
       <div className="flex flex-1 flex-col overflow-y-auto bg-white dark:bg-neutral-900">
-        {/* Updated Header with Join and Create Actions */}
-        <header className="flex h-16 shrink-0 items-center justify-between border-b px-6 sticky top-0 z-10 bg-white dark:bg-neutral-900 gap-4">
+        <header className="flex h-16 shrink-0 items-center justify-between border-b px-6 sticky top-0 z-10 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-sm gap-4">
           <Breadcrumb className="hidden lg:block">
             <BreadcrumbList>
               <BreadcrumbItem><BreadcrumbLink href="#">Dashboard</BreadcrumbLink></BreadcrumbItem>
@@ -259,22 +325,19 @@ function DashboardContent() {
           <div className="flex items-center gap-3 ml-auto">
             <div className="flex items-center gap-2">
               <Input 
-                placeholder="Join Room via Name..." 
+                placeholder="Join via Room Name..." 
                 value={roomSlug} 
                 onChange={(e) => setRoomSlug(e.target.value)}
-                className="h-9 w-40 lg:w-60 dark:bg-neutral-800 rounded-sm"
+                className="h-9 w-40 lg:w-60 rounded-sm dark:bg-neutral-800" 
               />
               <Button variant="secondary" size="sm" onClick={joinRoom} className="h-9 rounded-sm">Join</Button>
             </div>
-            <Separator orientation="vertical" className="h-6 mx-1 hidden sm:block" />
-            <Button onClick={() => setShowCreateDialog(true)} size="sm" className="h-9 gap-2 rounded-sm">
-              <PlusCircle className="h-4 w-4" /> Create Room
-            </Button>
+            <div className="h-6 w-px bg-neutral-200 dark:bg-neutral-800 mx-1 hidden sm:block" />
+            <Button onClick={() => setShowCreateDialog(true)} size="sm" className="h-9 gap-2 rounded-sm"><PlusCircle className="h-4 w-4" /> Create</Button>
           </div>
         </header>
 
         <main className="p-6 space-y-6">
-          {/* Your Rooms Search Section */}
           <div className="flex items-center justify-between gap-4">
             <h1 className="text-xl font-bold dark:text-white">Your Rooms</h1>
             <div className="relative w-full max-w-sm">
@@ -282,20 +345,20 @@ function DashboardContent() {
               <Input
                 placeholder="Filter search..."
                 value={(table.getColumn("slug")?.getFilterValue() as string) ?? ""}
-                onChange={(event) => table.getColumn("slug")?.setFilterValue(event.target.value)}
-                className="pl-9 dark:bg-neutral-800 rounded-sm"
+                onChange={(e) => table.getColumn("slug")?.setFilterValue(e.target.value)}
+                className="pl-9 rounded-sm dark:bg-neutral-800"
               />
             </div>
           </div>
 
-          <div className="rounded-sm border dark:border-neutral-700 bg-white dark:bg-neutral-800 overflow-hidden shadow-sm">
+          <div className="rounded-sm border dark:border-neutral-800 shadow-sm overflow-hidden">
             <Table>
               <TableHeader className="bg-neutral-50 dark:bg-neutral-900/50">
                 {table.getHeaderGroups().map(headerGroup => (
                   <TableRow key={headerGroup.id}>
                     {headerGroup.headers.map(header => (
-                      <TableHead key={header.id}>
-                        {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
+                      <TableHead key={header.id} className="text-xs uppercase font-bold text-neutral-500">
+                        {flexRender(header.column.columnDef.header, header.getContext())}
                       </TableHead>
                     ))}
                   </TableRow>
@@ -304,56 +367,59 @@ function DashboardContent() {
               <TableBody>
                 {table.getRowModel().rows?.length ? (
                   table.getRowModel().rows.map(row => (
-                    <TableRow key={row.id} className="hover:bg-neutral-50/50 dark:hover:bg-neutral-900/40 border-b dark:border-neutral-700 last:border-0">
+                    <TableRow key={row.id} className="hover:bg-neutral-50/50 dark:hover:bg-neutral-900/40 border-b dark:border-neutral-800 last:border-0">
                       {row.getVisibleCells().map(cell => (
-                        <TableCell key={cell.id} className="py-3">{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>
+                        <TableCell key={cell.id} className="py-3">
+                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                        </TableCell>
                       ))}
                     </TableRow>
                   ))
                 ) : (
-                  <TableRow><TableCell colSpan={columns.length} className="h-32 text-center text-neutral-500">No rooms found.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={5} className="h-32 text-center text-neutral-500">No rooms found.</TableCell></TableRow>
                 )}
               </TableBody>
             </Table>
           </div>
 
           <div className="flex items-center justify-between px-2">
-            <p className="text-xs text-neutral-500 font-mono uppercase tracking-wider">
-              Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()}
-            </p>
-            <div className="flex items-center space-x-2">
-              <Button variant="outline" size="sm" onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()} className="rounded-sm h-8">
-                <ChevronLeft className="h-4 w-4 mr-1" /> Prev
+            <p className="text-xs text-neutral-500 font-mono uppercase tracking-widest">Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()}</p>
+            <div className="flex space-x-2">
+              <Button variant="outline" size="sm" onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()} className="rounded-sm h-8 text-xs">
+                <ChevronLeft className="h-3 w-3 mr-1" /> Prev
               </Button>
-              <Button variant="outline" size="sm" onClick={() => table.nextPage()} disabled={!table.getCanNextPage()} className="rounded-sm h-8">
-                Next <ChevronRight className="h-4 w-4 ml-1" />
+              <Button variant="outline" size="sm" onClick={() => table.nextPage()} disabled={!table.getCanNextPage()} className="rounded-sm h-8 text-xs">
+                Next <ChevronRight className="h-3 w-3 ml-1" />
               </Button>
             </div>
           </div>
         </main>
       </div>
 
+      {/* DIALOGS */}
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
         <DialogContent className="rounded-sm">
           <DialogHeader><DialogTitle>New Workspace Room</DialogTitle></DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>Room Name</Label>
-              <Input placeholder="e.g. creative-sprint" value={newRoomName} onChange={e => setNewRoomName(e.target.value)} className="rounded-sm" />
-            </div>
+          <div className="space-y-4 py-2">
+            <Label>Room Name</Label>
+            <Input placeholder="e.g. creative-sprint" value={newRoomName} onChange={e => setNewRoomName(e.target.value)} className="rounded-sm" />
           </div>
-          <Button className="w-full rounded-sm" onClick={handleCreateRoom} disabled={creating || !newRoomName}>
-            {creating ? 'Creating...' : 'Create Room'}
-          </Button>
+          <Button className="w-full rounded-sm" onClick={handleCreateRoom} disabled={creating || !newRoomName}>{creating ? 'Creating...' : 'Confirm'}</Button>
         </DialogContent>
       </Dialog>
 
       <Dialog open={showAddUserDialog} onOpenChange={setShowAddUserDialog}>
         <DialogContent className="rounded-sm">
-          <DialogHeader><DialogTitle>Invite Collaborator</DialogTitle></DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2"><Label>Name</Label><Input placeholder="John Doe" value={collabUsername} onChange={e => setCollabUsername(e.target.value)} className="rounded-sm" /></div>
-            <div className="space-y-2"><Label>Email</Label><Input placeholder="john@example.com" value={collabUseremail} onChange={e => setCollabUseremail(e.target.value)} className="rounded-sm" /></div>
+          <DialogHeader><DialogTitle>Invite to {selectedRoom?.slug}</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-2">
+             <div className="space-y-1">
+               <Label>Collaborator Name</Label>
+               <Input placeholder="John Doe" value={collabUsername} onChange={e => setCollabUsername(e.target.value)} className="rounded-sm" />
+             </div>
+             <div className="space-y-1">
+               <Label>Collaborator Email</Label>
+               <Input placeholder="john@example.com" value={collabUseremail} onChange={e => setCollabUseremail(e.target.value)} className="rounded-sm" />
+             </div>
           </div>
           <Button className="w-full rounded-sm" onClick={() => setShowAddUserDialog(false)}>Send Invitation</Button>
         </DialogContent>
@@ -362,14 +428,9 @@ function DashboardContent() {
   );
 }
 
-// Separator helper for the header
-const Separator = ({ orientation, className }: { orientation: string, className?: string }) => (
-  <div className={cn("bg-neutral-200 dark:bg-neutral-700", orientation === "vertical" ? "w-[1px]" : "h-[1px]", className)} />
-);
-
 export default function DashboardPage() {
   return (
-    <Suspense fallback={<div className="flex h-screen items-center justify-center bg-neutral-900"><Skeleton className="h-12 w-12 rounded-full" /></div>}>
+    <Suspense fallback={<div className="flex h-screen items-center justify-center"><Skeleton className="h-12 w-12 rounded-full" /></div>}>
       <DashboardContent />
     </Suspense>
   );
