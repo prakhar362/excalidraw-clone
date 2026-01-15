@@ -24,6 +24,7 @@ const middleware_1 = require("./middleware");
 const User_1 = require("../models/User");
 const Room_1 = require("../models/Room");
 const Chat_1 = require("../models/Chat");
+const Message_1 = require("../models/Message");
 const nodemailer_1 = __importDefault(require("nodemailer"));
 dotenv_1.default.config();
 passport_1.default.use(new passport_google_oauth20_1.Strategy({
@@ -317,12 +318,23 @@ function createExpressApp() {
             res.status(500).json({ message: 'Failed to store drawing' });
         }
     }));
+    // ---------------------- GET TEXT CHAT ----------------------
+    app.get('/rooms/:roomId/messages', middleware_1.middleware, (req, res) => __awaiter(this, void 0, void 0, function* () {
+        try {
+            const messages = yield Message_1.Message.find({ roomId: req.params.roomId })
+                .populate('userId', 'name photo')
+                .sort({ createdAt: 1 }); // Oldest to newest
+            res.json({ messages });
+        }
+        catch (e) {
+            res.status(500).json({ message: 'Error fetching chat history' });
+        }
+    }));
     // ---------------------- GOOGLE AUTH ----------------------
     app.get("/auth/google", passport_1.default.authenticate("google", {
         scope: ["profile", "email"],
         session: false,
     }));
-    // backend/routes/auth.ts (or your main file)
     app.get("/auth/google/callback", passport_1.default.authenticate("google", {
         session: false,
         failureRedirect: "https://sketchcalibur.vercel.app/auth", // Redirect on fail

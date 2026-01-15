@@ -3,8 +3,10 @@
 import dynamic from 'next/dynamic';
 import { useEffect, useRef, useState } from 'react';
 import '@excalidraw/excalidraw/index.css';
+import { RoomChat } from '@/components/RoomChat';
 import { useParams } from 'next/navigation';
 import { BACKEND_URL, WSS_URL } from '../../../config';
+import { cn } from '@/lib/utils';
 
 const Excalidraw = dynamic(
   () => import('@excalidraw/excalidraw').then((mod) => mod.Excalidraw),
@@ -21,152 +23,177 @@ interface CursorPosition {
 
 export default function CanvasPage() {
   const { roomId } = useParams();
+  
   const wsRef = useRef<WebSocket | null>(null);
-  const [excalidrawAPI, setExcalidrawAPI] = useState<any>(null);
+  const excalidrawAPIRef = useRef<any>(null); 
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const clientId = useRef<string>(Math.random().toString(36).slice(2));
-  const sendElements = useRef<ReturnType<typeof setTimeout> | null>(null);
   const userColor = useRef<string>(getRandomColor());
+  const username = useRef<string>(''); 
+  const sendElementsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const [remoteCursors, setRemoteCursors] = useState<Record<string, CursorPosition>>({});
-  const username = useRef<string>('');
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [showShare, setShowShare] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
-  // ---------------------- Load Drawing on Mount ----------------------
+  // 1. Initialize User Data from JWT (Fixes Name logic)
   useEffect(() => {
     const token = localStorage.getItem('token');
-    const storedUsername = localStorage.getItem('username');
-    if (!token || !roomId) return;
+    if (token) {
+      try {
+        const base64Url = token.split('.')[1];
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        const payload = JSON.parse(window.atob(base64));
+        
+        setCurrentUserId(payload.userId);
+        username.current = payload.name || "Anonymous User";
+      } catch (e) {
+        console.error("Token decode error", e);
+      }
+    }
+  }, []);
 
-    username.current = storedUsername || `User-${clientId.current.slice(0, 4)}`;
-
+  // 2. Load Drawing History
+  useEffect(() => {
+    if (!roomId) return;
     fetch(`${BACKEND_URL}/chats/${roomId}`)
       .then(res => res.json())
       .then(data => {
         const history = data.messages || [];
         const allElements: any[] = [];
-
-        for (let msg of history.reverse()) {
+        history.reverse().forEach((msg: any) => {
           try {
             const parsed = JSON.parse(msg.message);
             allElements.push(...parsed);
           } catch {}
-        }
+        });
 
-        if (excalidrawAPI) {
-          excalidrawAPI.updateScene({ elements: mergeElements([], allElements) });
-        } else {
-          const interval = setInterval(() => {
-            if (excalidrawAPI) {
-              excalidrawAPI.updateScene({ elements: mergeElements([], allElements) });
-              clearInterval(interval);
-            }
-          }, 300);
-        }
+        const syncInitial = () => {
+          if (excalidrawAPIRef.current) {
+            excalidrawAPIRef.current.updateScene({ 
+              elements: mergeElements([], allElements) 
+            });
+          } else {
+            setTimeout(syncInitial, 500);
+          }
+        };
+        syncInitial();
       });
-  }, [roomId, excalidrawAPI]);
+  }, [roomId]);
 
-  // ---------------------- WebSocket ----------------------
+  // 3. Stable WebSocket Lifecycle
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (!token || !roomId) return;
 
-    const ws = new WebSocket(`${WSS_URL}?token=${token}`);
-    wsRef.current = ws;
+    const connect = () => {
+      if (wsRef.current && (wsRef.current.readyState === WebSocket.CONNECTING || wsRef.current.readyState === WebSocket.OPEN)) {
+        return;
+      }
 
-    ws.onopen = () => {
-      ws.send(JSON.stringify({ type: 'join_room', roomId }));
+      const ws = new WebSocket(`${WSS_URL}?token=${token}`);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        ws.send(JSON.stringify({ type: 'join_room', roomId }));
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+
+          if (data.type === 'drawing' && data.clientId !== clientId.current) {
+            if (excalidrawAPIRef.current) {
+              const incomingElements = Array.isArray(data.elements) ? data.elements : [data.elements];
+              const currentElements = excalidrawAPIRef.current.getSceneElements();
+              const merged = mergeElements(currentElements, incomingElements);
+              excalidrawAPIRef.current.updateScene({ elements: merged });
+            }
+          }
+
+          if (data.type === 'cursor' && data.clientId !== clientId.current) {
+            setRemoteCursors(prev => ({
+              ...prev,
+              [data.clientId]: {
+                x: data.pointer.x,
+                y: data.pointer.y,
+                clientId: data.clientId,
+                color: data.color || '#000000',
+                username: data.username, 
+              },
+            }));
+          }
+        } catch (e) {
+          console.error("WS Message Parse Error", e);
+        }
+      };
+
+      ws.onclose = (e) => {
+        if (!e.wasClean) {
+          reconnectTimeoutRef.current = setTimeout(connect, 3000);
+        }
+      };
     };
 
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.type === 'drawing' && data.clientId !== clientId.current) {
-          const incomingElements = Array.isArray(data.elements) ? data.elements : [data.elements];
-          const currentElements = excalidrawAPI?.getSceneElements() || [];
-          const merged = mergeElements(currentElements, incomingElements);
-          excalidrawAPI?.updateScene({ elements: merged });
-        }
+    connect();
 
-        if (data.type === 'cursor' && data.clientId !== clientId.current) {
-          setRemoteCursors(prev => ({
-            ...prev,
-            [data.clientId]: {
-              x: data.pointer.x,
-              y: data.pointer.y,
-              clientId: data.clientId,
-              color: data.color || '#000000',
-              username: data.username,
-            },
-          }));
-        }
-      } catch (e) {
-        console.error('WebSocket Error:', e);
+    return () => {
+      if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+      if (wsRef.current) {
+        wsRef.current.close(1000, "Unmounted");
+        wsRef.current = null;
       }
     };
+  }, [roomId]);
 
-    ws.onerror = console.error;
-    ws.onclose = () => console.warn('WebSocket closed');
-
-    return () => ws.close();
-  }, [roomId, excalidrawAPI]);
-
-  // ---------------------- Drawing Change Sync ----------------------
+  // 4. Interaction Handlers
   const handleChange = (elements: readonly any[]) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-    if (sendElements.current) clearTimeout(sendElements.current);
-
-    sendElements.current = setTimeout(() => {
+    if (sendElementsTimer.current) clearTimeout(sendElementsTimer.current);
+    sendElementsTimer.current = setTimeout(() => {
       wsRef.current?.send(JSON.stringify({
         type: 'drawing',
         roomId,
         elements,
         clientId: clientId.current,
       }));
-    }, 150);
+    }, 100);
   };
 
-  // ---------------------- Pointer Sync ----------------------
   const handlePointerUpdate = (payload: any) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-
     wsRef.current.send(JSON.stringify({
       type: 'cursor',
       clientId: clientId.current,
       roomId,
       pointer: payload.pointer,
       color: userColor.current,
-      username: username.current,
+      username: username.current, 
     }));
   };
 
-  // ---------------------- Save Drawing to DB ----------------------
+  // 5. Original Save Logic
   const handleSaveToServer = async () => {
     const token = localStorage.getItem('token');
-    const elements = excalidrawAPI?.getSceneElements();
+    const elements = excalidrawAPIRef.current?.getSceneElements();
     if (!token || !elements || !roomId) return;
-
     setSaveStatus('saving');
     try {
       const res = await fetch(`${BACKEND_URL}/chats/${roomId}`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `${token}`
-        },
+        headers: { 'Content-Type': 'application/json', Authorization: `${token}` },
         body: JSON.stringify({ message: JSON.stringify(elements) })
       });
-
-      if (!res.ok) throw new Error('Save failed');
-      setSaveStatus('saved');
-      setTimeout(() => setSaveStatus('idle'), 1500);
-    } catch (e) {
-      console.error('Save error:', e);
-      setSaveStatus('idle');
-    }
+      if (res.ok) {
+        setSaveStatus('saved');
+        setTimeout(() => setSaveStatus('idle'), 1500);
+      }
+    } catch (e) { setSaveStatus('idle'); }
   };
 
-  // ---------------------- Share Logic ----------------------
+  // 6. Original Share Logic
   const handleShare = () => {
     setShowShare(true);
     setCopied(false);
@@ -179,16 +206,16 @@ export default function CanvasPage() {
   const handleCloseShare = () => setShowShare(false);
 
   return (
-    <div className="fixed inset-0">
+    <div className="fixed inset-0 overflow-hidden bg-[#f0f0f0]">
       <Excalidraw
-        excalidrawAPI={setExcalidrawAPI}
+        excalidrawAPI={(api) => (excalidrawAPIRef.current = api)}
         theme="light"
         onChange={handleChange}
         onPointerUpdate={handlePointerUpdate}
-        UIOptions={{
-          canvasActions: {
-            loadScene: true,
-            export: { saveFileToDisk: true },
+        UIOptions={{ 
+          canvasActions: { 
+            loadScene: true, 
+            export: { saveFileToDisk: true }, 
             saveAsImage: true,
             saveToActiveFile: true,
           },
@@ -196,7 +223,7 @@ export default function CanvasPage() {
         }}
       />
 
-      {/* Buttons (bottom center) */}
+      {/* Buttons (Original UI Bottom Center) */}
       <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-white/90 backdrop-blur-md px-4 py-2 rounded-xl shadow-lg">
         <button
           onClick={handleSaveToServer}
@@ -223,7 +250,7 @@ export default function CanvasPage() {
         )}
       </div>
 
-      {/* Share Popup */}
+      {/* Share Popup (Original UI) */}
       {showShare && (
         <div className="absolute bottom-20 left-1/2 -translate-x-1/2 bg-white border border-slate-200 rounded-lg shadow-xl p-4 w-72 z-50">
           <div className="flex justify-between items-center mb-2">
@@ -233,9 +260,8 @@ export default function CanvasPage() {
           <div className="flex items-center gap-2">
             <input
               type="text"
-              value={window.location.href}
+              value={typeof window !== 'undefined' ? window.location.href : ''}
               readOnly
-              onFocus={(e) => e.target.select()}
               className="flex-1 text-sm px-2.5 py-1.5 rounded-md border border-slate-300 bg-slate-100 text-slate-700"
             />
             <button
@@ -250,40 +276,42 @@ export default function CanvasPage() {
         </div>
       )}
 
-      {/* Cursor Indicators */}
-      <div className="absolute inset-0 pointer-events-none z-50">
+      {/* Remote Cursor Overlay (Figma Style with Name) */}
+      <div className="absolute inset-0 pointer-events-none z-40">
         {Object.values(remoteCursors).map((cursor) => (
-          <div
-            key={cursor.clientId}
-            className="absolute -translate-x-1/2 -translate-y-1/2"
-            style={{ left: cursor.x, top: cursor.y }}
-          >
-            <div className="absolute top-[-30px] left-1/2 -translate-x-1/2 text-white text-xs font-semibold px-2 py-1 rounded bg-opacity-80 shadow" style={{ backgroundColor: cursor.color }}>
-              {cursor.username}
+          <div key={cursor.clientId} className="absolute transition-all duration-100 ease-out" style={{ left: cursor.x, top: cursor.y }}>
+            <div className="relative">
+              <div 
+                className="absolute left-4 top-4 whitespace-nowrap px-2 py-1 rounded shadow-md text-[11px] font-bold text-white" 
+                style={{ backgroundColor: cursor.color }}
+              >
+                {cursor.username}
+              </div>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                <path d="M5.65376 12.3673H5.46026L5.31717 12.4976L0.500002 16.8829L0.500002 1.19841L11.7841 12.3673H5.65376Z" fill={cursor.color} stroke="white" strokeWidth="2"/>
+              </svg>
             </div>
-            <div className="w-4 h-4 rounded-full border-2 border-white shadow" style={{ backgroundColor: cursor.color }} />
           </div>
         ))}
       </div>
+
+      <RoomChat roomId={roomId} ws={wsRef.current} currentUserId={currentUserId} />
     </div>
   );
 }
 
-// 🔁 Merge helper
+// Helpers
 function mergeElements(existing: readonly any[], incoming: any[]): any[] {
   const map = new Map<string, any>();
   existing.forEach(el => map.set(el.id, el));
-  for (const el of incoming) {
-    const existingEl = map.get(el.id);
-    if (!existingEl || el.version > existingEl.version) {
-      map.set(el.id, el);
-    }
-  }
+  incoming.forEach(el => {
+    const prev = map.get(el.id);
+    if (!prev || el.version > prev.version) map.set(el.id, el);
+  });
   return Array.from(map.values()).filter(el => !el.isDeleted);
 }
 
-// 🎨 Cursor color generator
 function getRandomColor(): string {
-  const colors = ['#FF4C4C', '#4CFF4C', '#4C4CFF', '#FFAA00', '#00CFFF', '#FF00DD'];
+  const colors = ['#FF4C4C', '#4CFF4C', '#4C4CFF', '#FFAA00', '#00CFFF', '#FF00DD', '#7C3AED'];
   return colors[Math.floor(Math.random() * colors.length)];
 }

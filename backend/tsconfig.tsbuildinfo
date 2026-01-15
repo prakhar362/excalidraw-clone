@@ -1,1 +1,1 @@
-{"root":["./src/index.ts","./src/config/index.ts","./src/http/middleware.ts","./src/http/server.ts","./src/models/chat.ts","./src/models/room.ts","./src/models/user.ts","./src/ws/index.ts"],"version":"5.8.3"}
+{"root":["./src/index.ts","./src/config/index.ts","./src/http/middleware.ts","./src/http/server.ts","./src/models/chat.ts","./src/models/message.ts","./src/models/room.ts","./src/models/user.ts","./src/ws/index.ts"],"version":"5.8.3"}

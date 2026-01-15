@@ -29,7 +29,8 @@ function startServer() {
             const server = http_1.default.createServer(app);
             (0, index_1.attachWebSocketServer)(server);
             server.listen(PORT, () => {
-                console.log(`🚀 Server running on http://localhost:${PORT}`);
+                console.log(`🚀 HTTP Server: http://localhost:${PORT}`);
+                console.log(`🔌 WebSocket Server: ws://localhost:${PORT}`); // New Log
             });
         }
         catch (err) {

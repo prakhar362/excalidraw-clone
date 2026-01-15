@@ -10,6 +10,7 @@ import { middleware } from './middleware';
 import { User } from '../models/User';
 import { Room } from '../models/Room';
 import { Chat } from '../models/Chat';
+import { Message } from '../models/Message';
 import nodemailer from 'nodemailer';
 
 dotenv.config();
@@ -362,6 +363,18 @@ app.post('/chats/:roomId', middleware, async (req: any, res) => {
   }
 });
 
+// ---------------------- GET TEXT CHAT ----------------------
+app.get('/rooms/:roomId/messages', middleware, async (req: any, res) => {
+  try {
+    const messages = await Message.find({ roomId: req.params.roomId })
+      .populate('userId', 'name photo')
+      .sort({ createdAt: 1 }); // Oldest to newest
+    res.json({ messages });
+  } catch (e) {
+    res.status(500).json({ message: 'Error fetching chat history' });
+  }
+});
+
 // ---------------------- GOOGLE AUTH ----------------------
 app.get(
   "/auth/google",
@@ -371,7 +384,6 @@ app.get(
   })
 );
 
-// backend/routes/auth.ts (or your main file)
 
 app.get(
   "/auth/google/callback",

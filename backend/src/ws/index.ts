@@ -2,6 +2,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import jwt from 'jsonwebtoken';
 import { Chat } from '../models/Chat';
 import { User } from '../models/User';
+import { Message } from '../models/Message'; // Bro, make sure this import exists
 
 const JWT_SECRET = process.env.JWT_SECRET!;
 
@@ -29,8 +30,13 @@ export function attachWebSocketServer(server: any) {
     const url = req.url ?? '';
     const token = new URLSearchParams(url.split('?')[1]).get('token') || '';
     const userId = checkUser(token);
-    if (!userId) return ws.close();
+    
+    if (!userId) {
+      console.log('❌ Connection rejected: Invalid Token');
+      return ws.close();
+    }
 
+    console.log(`👤 User connected: ${userId}`);
     users.push({ ws, rooms: [], userId });
 
     ws.on('message', async (data) => {
@@ -39,12 +45,16 @@ export function attachWebSocketServer(server: any) {
         const user = users.find(u => u.ws === ws);
         if (!user) return;
 
-        const { type, roomId, message, elements, clientId } = parsed;
+        const { type, roomId, elements, clientId, content } = parsed;
 
         switch (type) {
           case 'join_room':
-            if (!user.rooms.includes(roomId)) user.rooms.push(roomId);
+            if (!user.rooms.includes(roomId)) {
+              user.rooms.push(roomId);
+              console.log(`🏠 User ${user.userId} joined room: ${roomId}`);
+            }
             break;
+
           case 'drawing':
             users.forEach(u => {
               if (u.ws !== ws && u.rooms.includes(roomId)) {
@@ -57,6 +67,7 @@ export function attachWebSocketServer(server: any) {
               }
             });
             break;
+
           case 'cursor': {
             try {
               const dbUser = await User.findById(user.userId).select('name');
@@ -79,6 +90,39 @@ export function attachWebSocketServer(server: any) {
             }
             break;
           }
+
+          // --- NEW CHAT CASE ADDED ---
+          case 'chat': {
+            try {
+              console.log(`💬 New chat in ${roomId} from ${user.userId}`);
+              
+              // 1. Save to DB
+              const newMessage = await Message.create({
+                roomId,
+                userId: user.userId,
+                content: content
+              });
+
+              // 2. Populate for frontend
+              const populatedMessage = await newMessage.populate('userId', 'name photo');
+
+              // 3. Broadcast to EVERYONE in the room (including sender)
+              const payload = JSON.stringify({
+                type: 'chat',
+                roomId,
+                message: populatedMessage
+              });
+
+              users.forEach(u => {
+                if (u.rooms.includes(roomId)) {
+                  u.ws.send(payload);
+                }
+              });
+            } catch (err) {
+              console.error('Chat error:', err);
+            }
+            break;
+          }
         }
       } catch (e) {
         console.error('WebSocket Error:', e);
@@ -87,7 +131,10 @@ export function attachWebSocketServer(server: any) {
 
     ws.on('close', () => {
       const idx = users.findIndex(u => u.ws === ws);
-      if (idx !== -1) users.splice(idx, 1);
+      if (idx !== -1) {
+        console.log(`🚪 User disconnected: ${users[idx].userId}`);
+        users.splice(idx, 1);
+      }
     });
   });
 
