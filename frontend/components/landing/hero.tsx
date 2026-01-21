@@ -26,14 +26,14 @@ export function Hero() {
       />
         <div className="z-10 mb-4 mt-10 sm:justify-center md:mb-4 md:mt-20">
           <div className="relative flex items-center whitespace-nowrap rounded-full border bg-popover px-3 py-1 text-xs leading-6  text-primary/60 ">
-            <DIcons.Shapes className="h-5 p-1" /> Now live: Real-time collaboration
+            <DIcons.Shapes className="h-5 p-1 text-orange-500" />Now live on ProductHunt.com
             <a
-              href="/"
+              href="https://www.producthunt.com/products/sketchcalibur"
               rel="noreferrer"
               className="hover:text-ali ml-1 flex items-center font-semibold"
             >
               <div className="absolute inset-0 flex" aria-hidden="true" />
-              Explore{" "}
+              {" "}
               <span aria-hidden="true">
                 <DIcons.ArrowRight className="h-4 w-4" />
               </span>
