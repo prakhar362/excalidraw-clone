@@ -128,15 +128,27 @@ function DashboardContent() {
   const toastOptions = { position: 'top-right' as const, autoClose: 2000, theme: 'dark' as const };
 
   useEffect(() => {
-    const savedToken = localStorage.getItem('token') || searchParams.get('token');
+    // 1. Check both sources
+    const urlToken = searchParams.get('token');
+    const storageToken = localStorage.getItem('token');
+    const savedToken = storageToken || urlToken;
+
     if (savedToken) {
+      // 2. IMPORTANT: If it came from the URL, persist it for other pages (like Canvas)
+      if (urlToken) {
+        localStorage.setItem('token', urlToken);
+        
+        // 3. Clean the URL so the token doesn't leak in screenshots/history
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+
       setToken(savedToken);
       fetchRooms(savedToken);
       fetchUserProfile(savedToken);
     } else {
       router.push('/auth');
     }
-  }, [searchParams]);
+  }, [searchParams, router]); // Added router to dependencies for safety
 
   const fetchRooms = async (activeToken: string) => {
     try {
