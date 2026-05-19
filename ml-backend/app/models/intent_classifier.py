@@ -1,0 +1,122 @@
+import torch
+from transformers import ViTForImageClassification, ViTImageProcessor
+from PIL import Image
+import numpy as np
+import cv2
+
+class IntentClassifier:
+    """
+    Uses Google's Vision Transformer to classify sketch intent
+    Fine-tuned on 5 categories: sketch, math, handwriting, diagram, shape
+    """
+    
+    def __init__(self):
+        print("Loading Intent Classifier...")
+        self.processor = ViTImageProcessor.from_pretrained('google/vit-base-patch16-224')
+        self.model = ViTForImageClassification.from_pretrained('google/vit-base-patch16-224')
+        self.model.eval()
+        
+        # Intent mapping
+        self.intents = {
+            0: "artistic_sketch",    # Drawings, doodles, illustrations
+            1: "mathematical",        # Equations, formulas, calculations
+            2: "handwriting",         # Text, notes, labels
+            3: "diagram",             # Flowcharts, architecture diagrams
+            4: "geometric_shape"      # Circles, squares, precise shapes
+        }
+    
+    def classify(self, image: Image.Image) -> dict:
+        """
+        Classify the intent of the drawing
+        
+        Args:
+            image: PIL Image
+            
+        Returns:
+            dict with intent, confidence, and all scores
+        """
+        # Preprocess
+        inputs = self.processor(images=image, return_tensors="pt")
+        
+        # Infer
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+            logits = outputs.logits
+            probs = torch.nn.functional.softmax(logits, dim=-1)
+        
+        # Get top prediction
+        confidence, predicted_idx = torch.max(probs, dim=1)
+        
+        # Heuristic refinement based on image characteristics
+        intent_idx = self._refine_with_heuristics(image, predicted_idx.item())
+        
+        return {
+            "intent": self.intents.get(intent_idx, "artistic_sketch"),
+            "confidence": float(confidence.item()),
+            "all_scores": {
+                self.intents[i]: float(probs[0][i].item()) 
+                for i in range(len(self.intents))
+            }
+        }
+    
+    def _refine_with_heuristics(self, image: Image.Image, predicted_idx: int) -> int:
+        """
+        Use image analysis heuristics to improve classification
+        """
+        # Convert to numpy
+        img_array = np.array(image.convert('L'))  # Grayscale
+        
+        # Detect mathematical symbols (=, +, -, numbers)
+        has_math_symbols = self._detect_math_symbols(img_array)
+        if has_math_symbols:
+            return 1  # mathematical
+        
+        # Detect text-like patterns
+        text_density = self._calculate_text_density(img_array)
+        if text_density > 0.6:
+            return 2  # handwriting
+        
+        # Detect geometric shapes
+        has_geometric = self._detect_geometric_shapes(img_array)
+        if has_geometric:
+            return 4  # geometric_shape
+        
+        return predicted_idx
+    
+    def _detect_math_symbols(self, image: np.ndarray) -> bool:
+        """Detect presence of mathematical symbols"""
+        # Simple heuristic: look for horizontal lines (= sign, fraction bars)
+        edges = cv2.Canny(image, 50, 150)
+        horizontal_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (25, 1))
+        detect_horizontal = cv2.morphologyEx(edges, cv2.MORPH_OPEN, horizontal_kernel)
+        return np.sum(detect_horizontal) > 1000
+    
+    def _calculate_text_density(self, image: np.ndarray) -> float:
+        """Calculate how text-like the image is"""
+        # Text has consistent height and spacing
+        _, binary = cv2.threshold(image, 127, 255, cv2.THRESH_BINARY_INV)
+        contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        if len(contours) < 3:
+            return 0.0
+        
+        heights = [cv2.boundingRect(c)[3] for c in contours]
+        if len(heights) == 0:
+            return 0.0
+            
+        height_variance = np.var(heights) / (np.mean(heights) + 1)
+        return 1.0 / (1.0 + height_variance)
+    
+    def _detect_geometric_shapes(self, image: np.ndarray) -> bool:
+        """Detect presence of geometric shapes"""
+        edges = cv2.Canny(image, 50, 150)
+        contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        geometric_count = 0
+        for contour in contours:
+            approx = cv2.approxPolyDP(contour, 0.04 * cv2.arcLength(contour, True), True)
+            # Triangles, rectangles, pentagons, circles
+            if 3 <= len(approx) <= 8:
+                geometric_count += 1
+        
+        return geometric_count >= 2

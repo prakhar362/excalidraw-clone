@@ -17,6 +17,7 @@ const express_1 = __importDefault(require("express"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const cors_1 = __importDefault(require("cors"));
 const bcrypt_1 = __importDefault(require("bcrypt"));
+const mongoose_1 = __importDefault(require("mongoose"));
 const passport_1 = __importDefault(require("passport"));
 const passport_google_oauth20_1 = require("passport-google-oauth20");
 const dotenv_1 = __importDefault(require("dotenv"));
@@ -78,6 +79,9 @@ function createExpressApp() {
     app.get('/', (req, res) => {
         res.send('http server backend running');
     });
+    app.get('/health', (req, res) => {
+        res.json({ status: 'ok', mongodb: mongoose_1.default.connection.readyState === 1 });
+    });
     // ---------------------- SIGNUP ----------------------
     app.post("/signup", (req, res) => __awaiter(this, void 0, void 0, function* () {
         const { email, password, name } = req.body;
@@ -113,6 +117,7 @@ function createExpressApp() {
     // ---------------------- LOGIN ----------------------
     app.post("/login", (req, res) => __awaiter(this, void 0, void 0, function* () {
         const { email, password } = req.body;
+        console.log('Login attempt:', { email, hasPassword: !!password });
         if (!email || !password) {
             return res.status(400).json({ message: "Missing inputs" });
         }
@@ -120,8 +125,10 @@ function createExpressApp() {
             const user = yield User_1.User.findOne({ email });
             // ❌ User not found
             if (!user) {
+                console.log('User not found:', email);
                 return res.status(403).json({ message: "Invalid email or password" });
             }
+            console.log('User found:', { email, authProvider: user.authProvider });
             // 🔐 Google-only account
             if (user.authProvider === "google") {
                 return res.status(403).json({
@@ -137,9 +144,11 @@ function createExpressApp() {
             const validPassword = yield bcrypt_1.default.compare(password, user.password);
             // ❌ Wrong password
             if (!validPassword) {
+                console.log('Invalid password for:', email);
                 return res.status(403).json({ message: "Invalid email or password" });
             }
             // ✅ Success
+            console.log('Login successful:', email);
             const token = jsonwebtoken_1.default.sign({ userId: user._id }, JWT_SECRET, { expiresIn: "7d" });
             return res.json({ token });
         }

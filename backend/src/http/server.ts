@@ -79,6 +79,10 @@ export function createExpressApp() {
     res.send('http server backend running');
   });
 
+  app.get('/health', (req, res) => {
+    res.json({ status: 'ok', mongodb: mongoose.connection.readyState === 1 });
+  });
+
 // ---------------------- SIGNUP ----------------------
 app.post("/signup", async (req, res) => {
   const { email, password, name } = req.body;
@@ -123,6 +127,8 @@ app.post("/signup", async (req, res) => {
 app.post("/login", async (req, res) => {
   const { email, password } = req.body;
 
+  console.log('Login attempt:', { email, hasPassword: !!password });
+
   if (!email || !password) {
     return res.status(400).json({ message: "Missing inputs" });
   }
@@ -132,8 +138,11 @@ app.post("/login", async (req, res) => {
 
     // ❌ User not found
     if (!user) {
+      console.log('User not found:', email);
       return res.status(403).json({ message: "Invalid email or password" });
     }
+
+    console.log('User found:', { email, authProvider: user.authProvider });
 
     // 🔐 Google-only account
     if (user.authProvider === "google") {
@@ -153,10 +162,12 @@ app.post("/login", async (req, res) => {
 
     // ❌ Wrong password
     if (!validPassword) {
+      console.log('Invalid password for:', email);
       return res.status(403).json({ message: "Invalid email or password" });
     }
 
     // ✅ Success
+    console.log('Login successful:', email);
     const token = jwt.sign(
       { userId: user._id },
       JWT_SECRET,

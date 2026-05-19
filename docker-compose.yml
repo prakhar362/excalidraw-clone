@@ -15,6 +15,20 @@ services:
       - ./backend/.env
     restart: unless-stopped
 
+  # ML Backend Service
+  ml-backend:
+    build:
+      context: ./ml-backend
+      dockerfile: Dockerfile
+    container_name: ml_backend_service
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./ml-backend/app:/app/app # Mount app for live-reloading
+    environment:
+      PORT: 8000
+    restart: unless-stopped
+
   # Frontend Service
   frontend:
     build:
@@ -30,6 +44,8 @@ services:
     environment:
       # This is how the frontend talks to the backend inside Docker
       NEXT_PUBLIC_API_URL: http://backend:5000
+      NEXT_PUBLIC_ML_API_URL: http://ml-backend:8000
     depends_on:
       - backend
+      - ml-backend
     restart: unless-stopped

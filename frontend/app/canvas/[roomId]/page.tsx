@@ -6,10 +6,22 @@ import '@excalidraw/excalidraw/index.css';
 import { RoomChat } from '@/components/RoomChat';
 import { useParams } from 'next/navigation';
 import { BACKEND_URL, WSS_URL } from '../../../config';
-import { convertToExcalidrawElements } from '@excalidraw/excalidraw';
+// convertToExcalidrawElements is dynamically imported inside generateFromAI to avoid SSR issues
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 
 const Excalidraw = dynamic(
   () => import('@excalidraw/excalidraw').then((mod) => mod.Excalidraw),
+  { ssr: false }
+);
+
+const MLToolbar = dynamic(
+  () => import('@/components/MLToolbar').then((mod) => mod.MLToolbar),
+  { ssr: false }
+);
+
+const ElementsNavigator = dynamic(
+  () => import('@/components/ElementsNavigator').then((mod) => mod.ElementsNavigator),
   { ssr: false }
 );
 
@@ -37,6 +49,7 @@ export default function CanvasPage() {
   const [showShare, setShowShare] = useState(false);
   const [copied, setCopied] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [excalidrawAPI, setExcalidrawAPI] = useState<any>(null);
 
   /* AI STATE */
   const [showAIModal, setShowAIModal] = useState(false);
@@ -359,6 +372,7 @@ User Request: ${aiPrompt}`
 
       const data = await res.json();
       const aiText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!aiText) throw new Error('Empty AI response');
       const jsonMatch = aiText.match(/\[.*\]/s);
       if (!jsonMatch) throw new Error("Invalid AI Response");
       
@@ -381,6 +395,7 @@ User Request: ${aiPrompt}`
         return el;
       });
 
+      const { convertToExcalidrawElements } = await import('@excalidraw/excalidraw');
       const aiElements = convertToExcalidrawElements(fixedJson, { regenerateIds: false });
       const currentElements = excalidrawAPIRef.current.getSceneElements();
       const merged = mergeElements(currentElements, aiElements);
@@ -395,7 +410,7 @@ User Request: ${aiPrompt}`
     }
   };
 
-  // 6. Original Functionalities (Save/Share)
+  // 5. Original Functionalities (Save/Share)
   const handleSaveToServer = async () => {
     const token = localStorage.getItem('token');
     const elements = excalidrawAPIRef.current?.getSceneElements();
@@ -424,7 +439,10 @@ User Request: ${aiPrompt}`
   return (
     <div className="fixed inset-0 overflow-hidden bg-[#f0f0f0]">
       <Excalidraw
-        excalidrawAPI={(api) => (excalidrawAPIRef.current = api)}
+        excalidrawAPI={(api) => {
+          excalidrawAPIRef.current = api;
+          setExcalidrawAPI(api);
+        }}
         theme="light"
         onChange={handleChange}
         onPointerUpdate={handlePointerUpdate}
@@ -520,6 +538,24 @@ User Request: ${aiPrompt}`
       </div>
 
       <RoomChat roomId={roomId} ws={wsRef.current} currentUserId={currentUserId} />
+      
+      {/* ML Toolbar */}
+      {excalidrawAPI && <MLToolbar excalidrawAPI={excalidrawAPI} />}
+      {excalidrawAPI && <ElementsNavigator excalidrawAPI={excalidrawAPI} />}
+      
+      {/* Toast Notifications */}
+      <ToastContainer
+        position="top-right"
+        autoClose={3000}
+        hideProgressBar={false}
+        newestOnTop
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+        theme="light"
+      />
     </div>
   );
 }
