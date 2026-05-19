@@ -4,8 +4,10 @@ python-multipart
 torch
 torchvision
 transformers
-diffusers
-accelerate
+easyocr
+python-dotenv
+sympy
+opencv-python-headless
 opencv-python-headless
 Pillow
 numpy

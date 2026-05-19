@@ -28,17 +28,25 @@ We do not need to manually draw thousands of pairs.
 ## 2. Feature: Mathematical Equation Solver
 **Objective:** Identify, read, and solve handwritten mathematical equations directly from the canvas without relying on paid APIs or hallucination-prone generic OCRs.
 
-### A. Architecture (CRNN + CTC)
-*   **Feature Extractor:** A lightweight Convolutional Neural Network (e.g., MobileNetV3) to extract visual features from the handwritten math.
-*   **Sequence Modeler:** An LSTM (Long Short-Term Memory) network to understand the sequence of characters.
-*   **Loss Function:** CTC (Connectionist Temporal Classification) loss, which is the industry standard for handwriting recognition where characters are not perfectly aligned.
+### A. Architecture Strategy 1: Object Detection (Roboflow / YOLOv8) - *First Priority*
+Instead of training a model to read an entire sentence, we use an Object Detection model (YOLOv8 Nano) to detect individual math symbols.
+*   **Model:** YOLOv8 Nano hosted on Roboflow (or exported to ONNX). Size: < 10MB.
+*   **Detection:** Detects bounding boxes for `0-9`, `a-z`, `+`, `-`, `=`, `*`, `/`.
+*   **Post-Processing:** A Python script sorts the detected bounding boxes by their X-coordinates (Left to Right) to reconstruct the equation string (e.g., `x+3=5`).
+*   **Solving:** The reconstructed string is passed to Python's `sympy` library.
+*   **Why this is Priority 1:** YOLOv8n uses practically 0 RAM, runs in milliseconds, and avoids all OOM crashes on Render.
 
-### B. Dataset Strategy
-1.  **CROHME Dataset:** Utilize the open-source CROHME dataset, which contains tens of thousands of handwritten equations paired with their exact LaTeX strings.
-2.  **Synthetic Data:** Use the `sympy` library to generate random complex algebraic equations, render them using 50+ cursive and mathematical fonts, and apply OpenCV distortions (blur, skew, noise) to mimic real canvas handwriting.
+### B. Architecture Strategy 2: CRNN + CTC - *Fallback Plan*
+If Object Detection struggles with overlapping cursive math, we will fall back to a Convolutional Recurrent Neural Network (CRNN).
+*   **Feature Extractor:** MobileNetV3 CNN.
+*   **Sequence Modeler:** LSTM network with CTC loss.
 
-### C. Training & Execution
-*   Train using PyTorch. The vocabulary will be strictly limited to mathematical symbols (`0-9`, `a-z`, `+`, `-`, `/`, `*`, `=`, `(`, `)`). This constraint makes the model incredibly fast and accurate compared to general OCR.
+### C. Dataset Strategy
+1.  **Roboflow Universe:** Search for existing "Handwritten Math Symbols" datasets on Roboflow to bootstrap the YOLO model immediately.
+2.  **Synthetic Data:** Use the `sympy` library to generate random equations, render them using handwritten fonts, and add bounding box annotations automatically.
+
+### D. Training & Execution
+*   Train the YOLOv8 model directly on Roboflow (or locally via PyTorch).
 *   Output string is passed to `sympy` for mathematical solving.
 
 ---

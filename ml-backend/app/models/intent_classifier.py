@@ -1,20 +1,14 @@
-import torch
-from transformers import ViTForImageClassification, ViTImageProcessor
-from PIL import Image
 import numpy as np
 import cv2
+from PIL import Image
 
 class IntentClassifier:
     """
-    Uses Google's Vision Transformer to classify sketch intent
-    Fine-tuned on 5 categories: sketch, math, handwriting, diagram, shape
+    Classifies sketch intent using OpenCV heuristics (fast, zero memory overhead)
     """
     
     def __init__(self):
-        print("Loading Intent Classifier...")
-        self.processor = ViTImageProcessor.from_pretrained('google/vit-base-patch16-224')
-        self.model = ViTForImageClassification.from_pretrained('google/vit-base-patch16-224')
-        self.model.eval()
+        print("Loading Intent Classifier (Heuristics mode)...")
         
         # Intent mapping
         self.intents = {
@@ -27,35 +21,22 @@ class IntentClassifier:
     
     def classify(self, image: Image.Image) -> dict:
         """
-        Classify the intent of the drawing
-        
-        Args:
-            image: PIL Image
-            
-        Returns:
-            dict with intent, confidence, and all scores
+        Classify the intent of the drawing using heuristics
         """
-        # Preprocess
-        inputs = self.processor(images=image, return_tensors="pt")
+        # Default to artistic sketch
+        intent_idx = 0 
         
-        # Infer
-        with torch.no_grad():
-            outputs = self.model(**inputs)
-            logits = outputs.logits
-            probs = torch.nn.functional.softmax(logits, dim=-1)
+        # Refine based on image characteristics
+        intent_idx = self._refine_with_heuristics(image, intent_idx)
         
-        # Get top prediction
-        confidence, predicted_idx = torch.max(probs, dim=1)
-        
-        # Heuristic refinement based on image characteristics
-        intent_idx = self._refine_with_heuristics(image, predicted_idx.item())
+        intent_name = self.intents.get(intent_idx, "artistic_sketch")
         
         return {
-            "intent": self.intents.get(intent_idx, "artistic_sketch"),
-            "confidence": float(confidence.item()),
+            "intent": intent_name,
+            "confidence": 0.85, # Heuristic confidence
             "all_scores": {
-                self.intents[i]: float(probs[0][i].item()) 
-                for i in range(len(self.intents))
+                name: 0.85 if name == intent_name else 0.1
+                for idx, name in self.intents.items()
             }
         }
     
