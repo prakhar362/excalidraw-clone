@@ -19,7 +19,6 @@ import numpy as np
 from PIL import Image
 from typing import List, Dict, Optional, Tuple
 from sympy import sympify, latex, solve, simplify, symbols
-import easyocr
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -27,7 +26,7 @@ load_dotenv()
 
 class MathSolver:
 
-    _reader:      Optional[easyocr.Reader] = None   # EasyOCR singleton
+    _reader:      Optional[object]         = None   # EasyOCR singleton
     _pix2tex_mdl: Optional[object]         = None   # pix2tex singleton
 
     def __init__(self):
@@ -262,11 +261,16 @@ class MathSolver:
     #  Tier 2: EasyOCR — returns ALL candidates sorted by math score      #
     # ------------------------------------------------------------------ #
 
-    def _get_reader(self) -> easyocr.Reader:
+    def _get_reader(self) -> object:
         if MathSolver._reader is None:
-            print("Loading EasyOCR model (first time)...")
-            MathSolver._reader = easyocr.Reader(["en"], gpu=False, verbose=False)
-            print("EasyOCR loaded.")
+            try:
+                import easyocr
+                print("Loading EasyOCR model (first time)...")
+                MathSolver._reader = easyocr.Reader(["en"], gpu=False, verbose=False)
+                print("EasyOCR loaded.")
+            except Exception as e:
+                print(f"Failed to load easyocr (likely OOM): {e}")
+                return None
         return MathSolver._reader
 
     def _easyocr_all_candidates(self, image: Image.Image) -> List[Tuple[str, int]]:
@@ -276,6 +280,9 @@ class MathSolver:
         NO allowlist — it constrains CRNN beam search and lowers accuracy.
         """
         reader   = self._get_reader()
+        if reader is None:
+            return []
+        
         variants = self._preprocess_variants(image)
         seen: Dict[str, int] = {}
 
