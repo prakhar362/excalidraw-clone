@@ -78,6 +78,54 @@ class Vectorizer:
         
         return elements
     
+    def text_to_excalidraw_with_style(self, text: str, x: float = 0, y: float = 0, style: dict = None) -> Dict:
+        """
+        Create Excalidraw text element with AI-suggested styling
+        
+        Args:
+            text: Text content to display
+            x: X position
+            y: Y position
+            style: AI-suggested styling from TextStyler
+        """
+        if style is None:
+            # Fallback to basic styling
+            return self.text_to_excalidraw(text, x, y)
+        
+        # Calculate text dimensions
+        font_size = style.get('fontSize', 20)
+        char_width = font_size * 0.6
+        text_width = len(text) * char_width
+        text_height = font_size * 1.5
+        
+        return {
+            "id": f"ml_text_{uuid.uuid4().hex[:8]}",
+            "type": "text",
+            "x": x,
+            "y": y,
+            "width": text_width,
+            "height": text_height,
+            "angle": 0,
+            "strokeColor": style.get('strokeColor', '#000000'),
+            "backgroundColor": "transparent",
+            "fillStyle": "solid",
+            "strokeWidth": 1,
+            "strokeStyle": "solid",
+            "roughness": 0,
+            "opacity": 100,
+            "text": text,
+            "fontSize": font_size,
+            "fontFamily": style.get('fontFamily', 1),
+            "textAlign": style.get('textAlign', 'left'),
+            "verticalAlign": style.get('verticalAlign', 'top'),
+            "baseline": font_size * 0.9,
+            "containerId": None,
+            "originalText": text,
+            # Metadata from AI
+            "textType": style.get('textType', 'body'),
+            "aiConfidence": style.get('confidence', 0.0),
+        }
+    
     def text_to_excalidraw(self, text: str, x: float = 0, y: float = 0, input_width: int = 0, input_height: int = 0) -> Dict:
         """
         Create Excalidraw text element with proper formatting

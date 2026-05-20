@@ -11,6 +11,7 @@ from app.models.sketch_enhancer import SketchEnhancer
 from app.models.math_solver import MathSolver
 from app.models.handwriting_recognizer import HandwritingRecognizer
 from app.models.vectorizer import Vectorizer
+from app.models.text_styler import TextStyler
 from app.config import config
 
 # Initialize FastAPI
@@ -31,10 +32,11 @@ sketch_enhancer = None
 math_solver = None
 handwriting_recognizer = None
 vectorizer = None
+text_styler = None
 
 @app.on_event("startup")
 async def load_models():
-    global intent_classifier, sketch_enhancer, math_solver, handwriting_recognizer, vectorizer
+    global intent_classifier, sketch_enhancer, math_solver, handwriting_recognizer, vectorizer, text_styler
     
     print("Loading ML models...")
     intent_classifier = IntentClassifier()
@@ -43,6 +45,7 @@ async def load_models():
     math_solver = MathSolver()
     math_solver._recognizer = handwriting_recognizer  # share the same TrOCR instance
     vectorizer = Vectorizer()
+    text_styler = TextStyler()
     print("All models loaded successfully!")
 
 @app.get("/")
@@ -145,15 +148,23 @@ async def process_sketch(
         elif intent == "handwriting":
             text = handwriting_recognizer.recognize(image)
             
-            # Get image dimensions for font size calculation
+            # Get image dimensions and context
             img_width, img_height = image.size
+            context = {
+                "canvas_width": img_width,
+                "canvas_height": img_height,
+                "y": 0  # Position in canvas
+            }
             
-            text_element = vectorizer.text_to_excalidraw(
+            # Get AI-suggested styling
+            style = text_styler.suggest_style(text, context)
+            
+            # Create text element with AI styling
+            text_element = vectorizer.text_to_excalidraw_with_style(
                 text, 
                 x=0, 
                 y=0,
-                input_width=img_width,
-                input_height=img_height
+                style=style
             )
             
             return JSONResponse({
@@ -163,7 +174,8 @@ async def process_sketch(
                 "result_type": "recognized_text",
                 "text": text,
                 "elements": [text_element],
-                "message": "Handwriting recognized!"
+                "styling": style,  # Include styling info
+                "message": f"Handwriting recognized as {style['textType']}!"
             })
         
         else:

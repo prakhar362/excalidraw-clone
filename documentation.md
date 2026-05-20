@@ -25,7 +25,7 @@ We do not need to manually draw thousands of pairs.
 
 ---
 
-## 2. Feature: Mathematical Equation Solver
+## 2. Feature: Mathematical Equation Solver (done)
 **Objective:** Identify, read, and solve handwritten mathematical equations directly from the canvas without relying on paid APIs or hallucination-prone generic OCRs.
 
 ### A. Architecture Strategy 1: Object Detection (Roboflow / YOLOv8) - *First Priority*
