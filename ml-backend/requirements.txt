@@ -19,4 +19,3 @@ requests
 pix2tex
 google-generativeai
 latex2sympy2
-inference-sdk

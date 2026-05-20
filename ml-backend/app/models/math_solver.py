@@ -124,7 +124,7 @@ class MathSolver:
 
     def _roboflow_read(self, image: Image.Image) -> str:
         """
-        Use Roboflow Inference SDK to detect and read math equations.
+        Use Roboflow HTTP API to detect and read math equations.
         Returns a plain equation string like 'x+3=5', or '' on failure.
         """
         api_key = os.environ.get("ROBOFLOW_API_KEY", "")
@@ -133,58 +133,97 @@ class MathSolver:
             return ""
 
         try:
-            from inference_sdk import InferenceHTTPClient
+            import requests
             
-            # Save image to temp file
-            temp_path = "temp_math_image.jpg"
-            image.save(temp_path, format="JPEG")
+            # Convert image to base64
+            buffered = BytesIO()
+            image.save(buffered, format="JPEG")
+            img_b64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
             
-            # Connect to Roboflow workflow
-            client = InferenceHTTPClient(
-                api_url="https://serverless.roboflow.com",
-                api_key=api_key
-            )
+            # Prepare the request
+            url = "https://serverless.roboflow.com/prakhar-yc6s2/workflows/detect-count-and-visualize"
+            headers = {
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "api_key": api_key,
+                "inputs": {
+                    "image": {
+                        "type": "base64",
+                        "value": img_b64
+                    }
+                }
+            }
             
-            # Run workflow
-            result = client.run_workflow(
-                workspace_name="prakhar-yc6s2",
-                workflow_id="detect-count-and-visualize",
-                images={"image": temp_path},
-                use_cache=True
-            )
+            # Make the request
+            print("Roboflow: Sending request to workflow...")
+            response = requests.post(url, json=payload, headers=headers, timeout=30)
             
-            # Clean up temp file
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
+            if response.status_code != 200:
+                print(f"Roboflow error: HTTP {response.status_code} - {response.text}")
+                return ""
+            
+            result = response.json()
+            print(f"Roboflow response: {result}")
             
             # Extract equation from result
             # The workflow should return detected text/equation
-            if result and isinstance(result, list) and len(result) > 0:
-                output = result[0]
-                # Try to extract text from various possible response formats
-                equation = ""
+            equation = ""
+            
+            if isinstance(result, dict):
+                # Try to extract from various possible response formats
+                # Common keys: 'output', 'predictions', 'detections', 'text', 'ocr_text'
+                for key in ['text', 'equation', 'detected_text', 'ocr_text', 'output', 'result']:
+                    if key in result:
+                        equation = str(result[key])
+                        break
                 
-                if isinstance(output, dict):
-                    # Try common keys
-                    for key in ['text', 'equation', 'detected_text', 'ocr_text', 'output']:
-                        if key in output:
-                            equation = str(output[key])
+                # If there's a predictions array
+                if not equation and 'predictions' in result:
+                    predictions = result['predictions']
+                    if isinstance(predictions, list) and len(predictions) > 0:
+                        pred = predictions[0]
+                        if isinstance(pred, dict):
+                            # Try common prediction keys
+                            for key in ['class', 'text', 'label', 'value']:
+                                if key in pred:
+                                    equation = str(pred[key])
+                                    break
+                
+                # If there's an outputs object
+                if not equation and 'outputs' in result:
+                    outputs = result['outputs']
+                    if isinstance(outputs, dict):
+                        for key in outputs.keys():
+                            if isinstance(outputs[key], str):
+                                equation = outputs[key]
+                                break
+            
+            elif isinstance(result, list) and len(result) > 0:
+                # Result is a list, take first item
+                first = result[0]
+                if isinstance(first, dict):
+                    for key in ['text', 'equation', 'class', 'label']:
+                        if key in first:
+                            equation = str(first[key])
                             break
-                    
-                    # If predictions array exists
-                    if 'predictions' in output and output['predictions']:
-                        pred = output['predictions'][0]
-                        if isinstance(pred, dict) and 'class' in pred:
-                            equation = str(pred['class'])
-                
-                if equation:
-                    print(f"Roboflow raw output: '{equation}'")
-                    equation = self._clean_math_text(equation)
-                    return equation
+                elif isinstance(first, str):
+                    equation = first
+            
+            if equation:
+                print(f"Roboflow extracted: '{equation}'")
+                equation = self._clean_math_text(equation)
+                return equation
             
             print("Roboflow: No equation detected in response")
             return ""
             
+        except requests.exceptions.Timeout:
+            print("Roboflow error: Request timeout")
+            return ""
+        except requests.exceptions.RequestException as e:
+            print(f"Roboflow request error: {e}")
+            return ""
         except Exception as e:
             print(f"Roboflow error: {e}")
             return ""
