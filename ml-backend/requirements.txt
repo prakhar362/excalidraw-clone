@@ -11,11 +11,7 @@ opencv-python-headless
 Pillow
 numpy
 scipy
-scikit-image
-redis
-Jinja2
-aiofiles
 requests
-pix2tex
 google-generativeai
-latex2sympy2
+sentencepiece
+tiktoken

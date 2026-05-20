@@ -1,8 +1,7 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { mlService } from '@/lib/mlService';
-import { Button } from '@/components/ui/button';
 import { Loader2, Sparkles, Brain, Calculator, Type, Image as ImageIcon, X, CheckCircle2 } from 'lucide-react';
 import { toast } from 'react-toastify';
 
@@ -14,279 +13,269 @@ interface MathResult {
   equation: string;
   solution: string[];
   steps: string[];
-  latex?: string;
 }
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function getSelectedIds(api: any): string[] {
+  return Object.keys(api.getAppState().selectedElementIds || {});
+}
+
+async function addElementsToCanvas(api: any, rawElements: any[], offsetX = 0, offsetY = 0) {
+  const existing = api.getSceneElements();
+  const shifted  = rawElements.map((el: any) => ({
+    ...el,
+    x: (el.x ?? 0) + offsetX,
+    y: (el.y ?? 0) + offsetY,
+  }));
+
+  try {
+    const { convertToExcalidrawElements } = await import('@excalidraw/excalidraw');
+    const safe = convertToExcalidrawElements(shifted);
+    api.updateScene({ elements: [...existing, ...safe] });
+  } catch {
+    // fallback: inject with minimal required fields
+    api.updateScene({
+      elements: [
+        ...existing,
+        ...shifted.map((el: any) => ({
+          ...el,
+          version:      1,
+          versionNonce: Math.floor(Math.random() * 1e6),
+          isDeleted:    false,
+          updated:      Date.now(),
+          seed:         Math.floor(Math.random() * 1e6),
+          groupIds:     el.groupIds     ?? [],
+          boundElements: el.boundElements ?? [],
+          link:         el.link         ?? null,
+          locked:       el.locked       ?? false,
+        })),
+      ],
+    });
+  }
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
 export const MLToolbar: React.FC<MLToolbarProps> = ({ excalidrawAPI }) => {
-  const [processing, setProcessing]     = useState(false);
-  const [status, setStatus]             = useState('');
-  const [isHealthy, setIsHealthy]       = useState(false);
-  const [mathResult, setMathResult]     = useState<MathResult | null>(null);
+  const [processing, setProcessing] = useState(false);
+  const [activeBtn,  setActiveBtn]  = useState<string | null>(null);
+  const [isHealthy,  setIsHealthy]  = useState(false);
+  const [mathResult, setMathResult] = useState<MathResult | null>(null);
 
   useEffect(() => {
     mlService.checkHealth().then(setIsHealthy);
   }, []);
 
-  /* ------------------------------------------------------------------ */
-  /*  Place the solution as Excalidraw text in the centre of the view    */
-  /* ------------------------------------------------------------------ */
-  const placeMathOnCanvas = async (result: MathResult) => {
+  // ── Place math solution text on canvas ──────────────────────────────
+  const placeMathOnCanvas = useCallback(async (result: MathResult) => {
     if (!excalidrawAPI) return;
+    const appState = excalidrawAPI.getAppState();
+    const zoom     = appState.zoom?.value ?? 1;
+    const cx = -appState.scrollX + window.innerWidth  / 2 / zoom;
+    const cy = -appState.scrollY + window.innerHeight / 2 / zoom;
 
-    const appState  = excalidrawAPI.getAppState();
-    // Centre of visible viewport in scene coords
-    const cx = appState.scrollX !== undefined
-      ? -appState.scrollX + window.innerWidth  / 2 / appState.zoom.value
-      : 400;
-    const cy = appState.scrollY !== undefined
-      ? -appState.scrollY + window.innerHeight / 2 / appState.zoom.value
-      : 300;
-
-    const lines = [
-      `📐 ${result.equation}`,
-      `✅  x = ${result.solution.join(', ')}`,
-    ];
-
-    const newTextEls = lines.map((text, i) => ({
-      id:          `math-text-${Date.now()}-${i}`,
-      type:        'text' as const,
-      x:           cx - 120,
-      y:           cy - 40 + i * 50,
-      width:       300,
-      height:      40,
-      text:        text || " ",
-      fontSize:    i === 0 ? 22 : 28,
-      fontFamily:  1,
-      textAlign:   'left' as const,
-      verticalAlign: 'middle' as const,
-      strokeColor: i === 0 ? '#6366f1' : '#16a34a',
+    const textEls = [
+      { text: result.equation,                    color: '#6366f1', size: 22, dy: -40 },
+      { text: `x = ${result.solution.join(', ')}`, color: '#16a34a', size: 28, dy:  20 },
+    ].map(({ text, color, size, dy }, i) => ({
+      id:              `math-${Date.now()}-${i}`,
+      type:            'text' as const,
+      x:               cx - 120,
+      y:               cy + dy,
+      width:           320,
+      height:          size * 1.5,
+      text,
+      fontSize:        size,
+      fontFamily:      1,
+      textAlign:       'left'   as const,
+      verticalAlign:   'middle' as const,
+      strokeColor:     color,
       backgroundColor: 'transparent',
-      fillStyle:   'solid' as const,
-      strokeWidth: 1,
-      roughness:   0,
-      opacity:     100,
-      groupIds:    [],
-      roundness:   null,
-      boundElements: [],
-      link:        null,
-      locked:      false,
+      fillStyle:       'solid'  as const,
+      strokeWidth:     1,
+      roughness:       0,
+      opacity:         100,
     }));
 
-    try {
-      const { convertToExcalidrawElements } = await import('@excalidraw/excalidraw');
-      const aiElements = convertToExcalidrawElements(newTextEls);
+    await addElementsToCanvas(excalidrawAPI, textEls);
+  }, [excalidrawAPI]);
 
-      excalidrawAPI.updateScene({
-        elements: [...excalidrawAPI.getSceneElements(), ...aiElements],
-      });
-    } catch (err) {
-      console.error("Error placing elements via API, falling back to manual insertion", err);
-      // Fallback
-      excalidrawAPI.updateScene({
-        elements: [...excalidrawAPI.getSceneElements(), ...newTextEls.map(el => ({
-          ...el,
-          version: 1,
-          versionNonce: Math.floor(Math.random() * 100000),
-          isDeleted: false,
-          updated: Date.now(),
-          seed: Math.floor(Math.random() * 100000),
-        }))]
-      });
-    }
-  };
-
-  /* ------------------------------------------------------------------ */
-  /*  Main handler                                                        */
-  /* ------------------------------------------------------------------ */
-  const handleEnhance = async (forceIntent?: string) => {
-    const selectedIds = Object.keys(excalidrawAPI.getAppState().selectedElementIds || {});
-    if (selectedIds.length === 0) {
-      toast.error('Please select elements first');
-      return;
-    }
+  // ── Generic runner ───────────────────────────────────────────────────
+  const run = useCallback(async (
+    label: string,
+    fn: (blob: Blob) => Promise<any>,
+    onSuccess: (result: any) => void,
+  ) => {
+    const ids = getSelectedIds(excalidrawAPI);
+    if (ids.length === 0) { toast.error('Select elements first'); return; }
 
     setProcessing(true);
+    setActiveBtn(label);
     setMathResult(null);
-    setStatus('Extracting selection…');
 
     try {
-      const imageBlob = await mlService.extractSelectionAsImage(excalidrawAPI, selectedIds);
-      setStatus('Processing with AI…');
-      const result = await mlService.processSelection(imageBlob, undefined, forceIntent);
+      const blob   = await mlService.extractSelectionAsImage(excalidrawAPI, ids);
+      const result = await fn(blob);
 
-      if (result.success) {
-        if (result.result_type === 'math_solution' && result.solution) {
-          // Show the dedicated math panel AND place text on canvas
-          const mr: MathResult = {
-            equation: result.equation || '',
-            solution: result.solution,
-            steps:    result.steps   || [],
-            latex:    result.latex,
-          };
-          setMathResult(mr);
-          placeMathOnCanvas(mr);
-          toast.success('✅ Equation solved!');
-        } else {
-          // Non-math: add elements to canvas safely
-          const elements = excalidrawAPI.getSceneElements();
-          
-          // Find original position to place the new sketch near it
-          const selectedElements = elements.filter((el: any) => selectedIds.includes(el.id));
-          const minX = selectedElements.length > 0 ? Math.min(...selectedElements.map((el: any) => el.x)) : 0;
-          const minY = selectedElements.length > 0 ? Math.min(...selectedElements.map((el: any) => el.y)) : 0;
-
-          const newElements = result.elements.map((el: any) => ({
-            ...el,
-            x: el.x + minX + 50, // Offset by 50px from original so they don't exactly overlap
-            y: el.y + minY + 50,
-            groupIds: [],
-            boundElements: [],
-          }));
-
-          try {
-            const { convertToExcalidrawElements } = await import('@excalidraw/excalidraw');
-            const safeElements = convertToExcalidrawElements(newElements);
-            excalidrawAPI.updateScene({ elements: [...elements, ...safeElements] });
-          } catch (err) {
-            console.error("Fallback injection for sketch", err);
-            excalidrawAPI.updateScene({ elements: [...elements, ...newElements.map((el: any) => ({
-              ...el,
-              version: 1,
-              versionNonce: Math.floor(Math.random() * 100000),
-              isDeleted: false,
-              updated: Date.now(),
-              seed: Math.floor(Math.random() * 100000),
-            }))]});
-          }
-
-          if (result.result_type === 'recognized_text' && result.text) {
-            toast.info(`Recognized: ${result.text}`);
-          } else {
-            toast.success(result.message);
-          }
-        }
-      } else {
+      if (!result.success) {
         toast.error(result.message || 'Processing failed');
+        return;
       }
 
-      setStatus('');
-    } catch (error: any) {
-      console.error('ML error:', error);
-      toast.error(error.message || 'Processing failed');
-      setStatus('');
+      onSuccess(result);
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err?.response?.data?.detail || err.message || 'Processing failed');
     } finally {
       setProcessing(false);
+      setActiveBtn(null);
     }
-  };
+  }, [excalidrawAPI]);
 
-  const handleClassify = async () => {
-    const selectedIds = Object.keys(excalidrawAPI.getAppState().selectedElementIds || {});
-    if (selectedIds.length === 0) { toast.error('Please select elements'); return; }
-    setProcessing(true);
-    try {
-      const imageBlob = await mlService.extractSelectionAsImage(excalidrawAPI, selectedIds);
-      const result    = await mlService.classifyIntent(imageBlob);
-      if (result.success) {
-        toast.info(`Detected: ${result.intent} (${(result.confidence * 100).toFixed(1)}%)`);
-      }
-    } catch { toast.error('Classification failed'); }
-    finally { setProcessing(false); }
-  };
+  // ── Button handlers — each calls its own dedicated endpoint ─────────
 
-  /* ------------------------------------------------------------------ */
-  /*  Render                                                              */
-  /* ------------------------------------------------------------------ */
+  // Auto Enhance → /api/ml/enhance (intent classifier decides)
+  const handleAutoEnhance = () => run('enhance', mlService.autoEnhance.bind(mlService), async (result) => {
+    if (result.result_type === 'math_solution') {
+      const mr = { equation: result.equation, solution: result.solution, steps: result.steps };
+      setMathResult(mr);
+      await placeMathOnCanvas(mr);
+      toast.success('✅ Equation solved!');
+    } else if (result.result_type?.includes('text')) {
+      await addElementsToCanvas(excalidrawAPI, result.elements);
+      toast.success(result.message);
+    } else {
+      const sel = excalidrawAPI.getSceneElements().filter((el: any) =>
+        getSelectedIds(excalidrawAPI).includes(el.id));
+      const ox = sel.length ? Math.min(...sel.map((e: any) => e.x)) + 60 : 0;
+      const oy = sel.length ? Math.min(...sel.map((e: any) => e.y)) + 60 : 0;
+      await addElementsToCanvas(excalidrawAPI, result.elements, ox, oy);
+      toast.success(result.message);
+    }
+  });
+
+  // Math → /api/ml/math
+  const handleMath = () => run('math', mlService.solveMath.bind(mlService), async (result) => {
+    if (!result.success) { toast.error(result.message); return; }
+    const mr = { equation: result.equation, solution: result.solution, steps: result.steps };
+    setMathResult(mr);
+    await placeMathOnCanvas(mr);
+    toast.success(`✅ Solved: ${result.equation} → ${result.solution.join(', ')}`);
+  });
+
+  // Text → /api/ml/text
+  const handleText = () => run('text', mlService.recognizeText.bind(mlService), async (result) => {
+    await addElementsToCanvas(excalidrawAPI, result.elements);
+    const count = result.regions_count ?? 1;
+    toast.success(`✨ Recognized ${count} text region${count > 1 ? 's' : ''}`);
+  });
+
+  // Sketch → /api/ml/sketch
+  const handleSketch = () => run('sketch', mlService.enhanceSketch.bind(mlService), async (result) => {
+    const sel = excalidrawAPI.getSceneElements().filter((el: any) =>
+      getSelectedIds(excalidrawAPI).includes(el.id));
+    const ox = sel.length ? Math.min(...sel.map((e: any) => e.x)) + 60 : 0;
+    const oy = sel.length ? Math.min(...sel.map((e: any) => e.y)) + 60 : 0;
+    await addElementsToCanvas(excalidrawAPI, result.elements, ox, oy);
+    toast.success('🎨 Sketch enhanced!');
+  });
+
+  // Detect → /api/ml/detect
+  const handleDetect = () => run('detect', mlService.detectIntent.bind(mlService), (result) => {
+    toast.info(`🔍 Detected: ${result.intent} (${(result.confidence * 100).toFixed(0)}%)`);
+  });
+
+  // ── Render ───────────────────────────────────────────────────────────
+
+  const btnBase = 'flex items-center justify-center gap-1.5 rounded-lg text-xs font-semibold h-8 px-3 transition-all disabled:opacity-50 disabled:cursor-not-allowed border';
+  const btnPrimary = `${btnBase} bg-indigo-600 hover:bg-indigo-700 text-white border-indigo-600`;
+  const btnOutline = `${btnBase} bg-white hover:bg-gray-50 text-gray-700 border-gray-200`;
+
+  const Spinner = () => <Loader2 className="h-3.5 w-3.5 animate-spin" />;
+
   if (!isHealthy) {
     return (
-      <div className="fixed top-4 right-4 bg-yellow-50 border border-yellow-200 rounded-lg p-3 shadow-lg z-50">
-        <p className="text-sm text-yellow-800">⚠️ ML API unavailable</p>
+      <div className="fixed top-4 right-4 bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2 shadow z-50">
+        <p className="text-xs text-yellow-700 font-medium">⚠️ ML API offline</p>
       </div>
     );
   }
 
   return (
     <>
-      {/* ── Toolbar ── */}
-      <div className="fixed top-4 right-4 bg-white rounded-xl p-4 shadow-xl z-50 border border-gray-100 w-[220px]">
-        <div className="flex flex-col gap-2">
-          <h3 className="text-sm font-bold text-gray-800 mb-1">🤖 AI Enhancement</h3>
+      {/* ── Toolbar panel ── */}
+      <div className="fixed top-4 right-4 bg-white rounded-2xl shadow-xl border border-gray-100 p-4 z-50 w-[210px]">
+        <p className="text-xs font-bold text-gray-700 mb-3">🤖 AI Tools</p>
 
-          <Button onClick={() => handleEnhance()} disabled={processing} className="w-full text-sm h-9">
-            {processing
-              ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Processing…</>
-              : <><Sparkles className="mr-2 h-4 w-4" />Auto Enhance</>}
-          </Button>
+        {/* Auto Enhance — full width */}
+        <button
+          onClick={handleAutoEnhance}
+          disabled={processing}
+          className={`${btnPrimary} w-full mb-2`}
+        >
+          {activeBtn === 'enhance' ? <Spinner /> : <Sparkles className="h-3.5 w-3.5" />}
+          Auto Enhance
+        </button>
 
-          <div className="grid grid-cols-2 gap-1.5">
-            <Button onClick={() => handleEnhance('artistic_sketch')} disabled={processing} variant="outline" size="sm" className="text-xs h-8">
-              <ImageIcon className="mr-1 h-3 w-3" />Sketch
-            </Button>
-            <Button onClick={() => handleEnhance('mathematical')} disabled={processing} variant="outline" size="sm" className="text-xs h-8">
-              <Calculator className="mr-1 h-3 w-3" />Math
-            </Button>
-            <Button onClick={() => handleEnhance('handwriting')} disabled={processing} variant="outline" size="sm" className="text-xs h-8">
-              <Type className="mr-1 h-3 w-3" />Text
-            </Button>
-            <Button onClick={handleClassify} disabled={processing} variant="outline" size="sm" className="text-xs h-8">
-              <Brain className="mr-1 h-3 w-3" />Detect
-            </Button>
-          </div>
-
-          {status && (
-            <div className="text-xs text-indigo-600 animate-pulse font-medium mt-1">{status}</div>
-          )}
-
-          <p className="text-[10px] text-gray-400 mt-1">Select elements, then click</p>
+        {/* 2×2 grid of dedicated buttons */}
+        <div className="grid grid-cols-2 gap-1.5">
+          <button onClick={handleSketch} disabled={processing} className={btnOutline}>
+            {activeBtn === 'sketch' ? <Spinner /> : <ImageIcon className="h-3.5 w-3.5" />}
+            Sketch
+          </button>
+          <button onClick={handleMath} disabled={processing} className={btnOutline}>
+            {activeBtn === 'math' ? <Spinner /> : <Calculator className="h-3.5 w-3.5" />}
+            Math
+          </button>
+          <button onClick={handleText} disabled={processing} className={btnOutline}>
+            {activeBtn === 'text' ? <Spinner /> : <Type className="h-3.5 w-3.5" />}
+            Text
+          </button>
+          <button onClick={handleDetect} disabled={processing} className={btnOutline}>
+            {activeBtn === 'detect' ? <Spinner /> : <Brain className="h-3.5 w-3.5" />}
+            Detect
+          </button>
         </div>
+
+        <p className="text-[10px] text-gray-400 mt-3 text-center">Select elements → click</p>
       </div>
 
-      {/* ── Math Result Panel ── */}
+      {/* ── Math result panel ── */}
       {mathResult && (
-        <div
-          style={{
-            position: 'fixed',
-            top: '16px',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            zIndex: 9999,
-            width: '440px',
-            animation: 'slideDown 0.25s ease-out',
-          }}
-        >
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] w-[420px]"
+          style={{ animation: 'slideDown .2s ease-out' }}>
           <style>{`
             @keyframes slideDown {
-              from { opacity: 0; transform: translateX(-50%) translateY(-20px); }
-              to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+              from { opacity:0; transform:translateX(-50%) translateY(-16px); }
+              to   { opacity:1; transform:translateX(-50%) translateY(0); }
             }
           `}</style>
+
           <div className="bg-white rounded-2xl shadow-2xl border border-indigo-100 overflow-hidden">
             {/* Header */}
             <div className="bg-gradient-to-r from-indigo-600 to-purple-600 px-5 py-3 flex items-center justify-between">
               <div className="flex items-center gap-2 text-white">
-                <Calculator className="h-5 w-5" />
+                <Calculator className="h-4 w-4" />
                 <span className="font-bold text-sm">Math Solution</span>
               </div>
-              <button
-                onClick={() => setMathResult(null)}
-                className="text-white/70 hover:text-white transition"
-              >
+              <button onClick={() => setMathResult(null)} className="text-white/70 hover:text-white">
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            {/* Body */}
-            <div className="p-5 space-y-4">
+            <div className="p-5 space-y-3">
               {/* Equation */}
               <div className="bg-indigo-50 rounded-xl px-4 py-3 text-center">
-                <p className="text-xs text-indigo-400 font-medium uppercase tracking-wide mb-1">Equation</p>
+                <p className="text-[10px] text-indigo-400 font-semibold uppercase tracking-widest mb-1">Equation</p>
                 <p className="text-xl font-mono font-bold text-indigo-700">{mathResult.equation}</p>
               </div>
 
               {/* Solution */}
               <div className="flex items-center gap-3 bg-green-50 rounded-xl px-4 py-3">
-                <CheckCircle2 className="h-8 w-8 text-green-500 flex-shrink-0" />
+                <CheckCircle2 className="h-7 w-7 text-green-500 flex-shrink-0" />
                 <div>
-                  <p className="text-xs text-green-500 font-medium uppercase tracking-wide">Solution</p>
+                  <p className="text-[10px] text-green-500 font-semibold uppercase tracking-widest">Solution</p>
                   <p className="text-2xl font-bold text-green-700 font-mono">
                     x = {mathResult.solution.join(', ')}
                   </p>
@@ -296,11 +285,11 @@ export const MLToolbar: React.FC<MLToolbarProps> = ({ excalidrawAPI }) => {
               {/* Steps */}
               {mathResult.steps.length > 0 && (
                 <div>
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Steps</p>
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-1.5">Steps</p>
                   <ol className="space-y-1">
                     {mathResult.steps.map((step, i) => (
                       <li key={i} className="flex gap-2 text-sm text-gray-700">
-                        <span className="text-indigo-400 font-bold w-4 flex-shrink-0">{i + 1}.</span>
+                        <span className="text-indigo-400 font-bold w-4 shrink-0">{i + 1}.</span>
                         <span className="font-mono">{step}</span>
                       </li>
                     ))}
@@ -308,7 +297,6 @@ export const MLToolbar: React.FC<MLToolbarProps> = ({ excalidrawAPI }) => {
                 </div>
               )}
 
-              {/* Place on canvas button */}
               <button
                 onClick={() => { placeMathOnCanvas(mathResult); setMathResult(null); }}
                 className="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold py-2 rounded-xl transition"

@@ -1,11 +1,10 @@
 """
-Math Solver - 4-tier OCR pipeline:
+Math Solver - 3-tier OCR pipeline:
 
-  Tier 0 → Roboflow Inference (workflow for math detection)
-  Tier 1 → Gemini Vision      (multimodal LLM, most accurate for handwriting)
-  Tier 2 → pix2tex            (ViT trained on handwritten math → LaTeX)
-  Tier 3 → EasyOCR            (multi-pass with multi-interpretation retry)
-  Tier 4 → Contour            (OpenCV symbol segmentation fallback)
+  Tier 0 → Roboflow HTTP API  (serverless workflow, fastest)
+  Tier 1 → Gemini Vision      (multimodal LLM, best for messy handwriting)
+  Tier 2 → EasyOCR            (multi-pass local OCR, no internet needed)
+  Tier 3 → Contour            (OpenCV symbol segmentation, last resort)
 
 Then SymPy solves the resulting equation string.
 """
@@ -14,7 +13,6 @@ import re
 import os
 import base64
 from io import BytesIO
-# pyrefly: ignore [missing-import]
 import cv2
 import numpy as np
 from PIL import Image
@@ -27,27 +25,17 @@ load_dotenv()
 
 class MathSolver:
 
-    _reader:      Optional[object]         = None   # EasyOCR singleton
-    _pix2tex_mdl: Optional[object]         = None   # pix2tex singleton
+    _reader: Optional[object] = None   # EasyOCR singleton
 
     def __init__(self):
-        print("Initializing Math Solver (Roboflow + Gemini Vision + pix2tex + EasyOCR + SymPy)...")
-
-    # ------------------------------------------------------------------ #
-    #  Public API                                                          #
-    # ------------------------------------------------------------------ #
+        print("Initializing Math Solver (Roboflow + Gemini + EasyOCR + SymPy)...")
 
     def solve(self, image: Image.Image) -> Dict:
-        """
-        Try every OCR tier in order.  For each raw OCR string, generate
-        multiple plausible equation interpretations (character corrections +
-        operator aliasing) and pass each to SymPy until one succeeds.
-        """
         print("\n" + "="*55)
         print("MATH SOLVER: starting recognition")
         print("="*55)
 
-        # ── Tier 0: Roboflow Inference (workflow for math detection) ──
+        # ── Tier 0: Roboflow ──────────────────────────────────────────
         roboflow_eq = self._roboflow_read(image)
         if roboflow_eq:
             print(f"Roboflow read: '{roboflow_eq}'")
@@ -56,7 +44,7 @@ class MathSolver:
                 if result:
                     return result
 
-        # ── Tier 1: Gemini Vision (best for handwritten math) ─────────
+        # ── Tier 1: Gemini Vision ─────────────────────────────────────
         gemini_eq = self._gemini_read(image)
         if gemini_eq:
             print(f"Gemini Vision read: '{gemini_eq}'")
@@ -65,19 +53,9 @@ class MathSolver:
                 if result:
                     return result
 
-        # ── Tier 2: pix2tex ───────────────────────────────────────────
-        latex_str = self._pix2tex_read(image)
-        if latex_str:
-            eq = self._latex_to_equation(latex_str)
-            print(f"pix2tex equation  : '{eq}'")
-            result = self._try_solve(eq)
-            if result:
-                return result
-
-        # ── Tier 3: EasyOCR (multi-pass, multi-interpretation) ────────
+        # ── Tier 2: EasyOCR ───────────────────────────────────────────
         candidates = self._easyocr_all_candidates(image)
         print(f"EasyOCR candidates: {[c for c,_ in candidates]}")
-
         for raw, score in candidates:
             for interp in self._generate_interpretations(raw):
                 print(f"  Trying: '{interp}'")
@@ -85,7 +63,7 @@ class MathSolver:
                 if result:
                     return result
 
-        # ── Tier 4: Contour fallback ───────────────────────────────────
+        # ── Tier 3: Contour fallback ──────────────────────────────────
         preprocessed = self._preprocess(image)
         fallback = self._contour_fallback(preprocessed)
         print(f"Contour fallback  : '{fallback}'")
@@ -288,97 +266,7 @@ class MathSolver:
             return ""
 
     # ------------------------------------------------------------------ #
-    #  Tier 1: pix2tex  (ViT → LaTeX, purpose-built for handwritten math) #
-    # ------------------------------------------------------------------ #
-
-    def _get_pix2tex(self):
-        if MathSolver._pix2tex_mdl is None:
-            try:
-                from pix2tex.cli import LatexOCR
-                print("Loading pix2tex model (first time — downloads ~1 GB)...")
-                MathSolver._pix2tex_mdl = LatexOCR()
-                print("pix2tex loaded.")
-            except Exception as e:
-                print(f"pix2tex unavailable: {e}")
-                MathSolver._pix2tex_mdl = False   # sentinel so we don't retry
-        return MathSolver._pix2tex_mdl or None
-
-    # LaTeX constructs that indicate pix2tex is hallucinating on a non-paper image
-    _PIX2TEX_GARBAGE = [
-        r'\begin{array}', r'\longrightarrow', r'\cal', r'\bigwedge',
-        r'\sim', r'\not', r'\cfrac', r'\stackrel', r'\displaystyle',
-        r'\end{array}', r'\cap_{', r'\bigcap', r'\mathcal',
-    ]
-
-    def _pix2tex_read(self, image: Image.Image) -> str:
-        """Return LaTeX string from pix2tex, or '' on failure/garbage."""
-        model = self._get_pix2tex()
-        if model is None:
-            return ""
-        try:
-            result = model(image)
-            if not result:
-                return ""
-            result = result.strip()
-            print(f"pix2tex raw LaTeX : '{result}'")
-
-            # Reject output that contains complex/typeset LaTeX constructs
-            # (pix2tex hallucinates these when fed canvas drawings instead of paper)
-            if any(marker in result for marker in self._PIX2TEX_GARBAGE):
-                print("pix2tex output rejected (complex LaTeX, not a simple equation)")
-                return ""
-
-            # Must contain at least one digit or letter and an operator/equals
-            if not re.search(r'[0-9a-zA-Z]', result):
-                print("pix2tex output rejected (no alphanumeric content)")
-                return ""
-
-            return result
-        except Exception as e:
-            print(f"pix2tex error: {e}")
-            return ""
-
-    @staticmethod
-    def _latex_to_equation(latex_str: str) -> str:
-        """
-        Convert pix2tex LaTeX output to a plain equation string for SymPy.
-        e.g. 'x + 3 = 5' → 'x+3=5'
-             '\\frac{x}{2}=3' → 'x/2=3'
-        """
-        t = latex_str
-
-        # Common LaTeX constructs → plain math
-        latex_map = [
-            (r"\frac{", "("), (r"}{", ")/("),  # fractions (approx)
-            (r"\cdot", "*"), (r"\times", "*"), (r"\div", "/"),
-            (r"\left(", "("), (r"\right)", ")"),
-            (r"\left[", "("), (r"\right]", ")"),
-            (r"^{2}", "**2"), (r"^{3}", "**3"),
-            (r"\sqrt{", "sqrt("),
-            (r"{", ""), (r"}", ")"),
-            (r"\ ", " "), (r"\,", " "),
-        ]
-        for old, new in latex_map:
-            t = t.replace(old, new)
-
-        # Remove remaining backslash commands (e.g. \alpha → a)
-        t = re.sub(r'\\[a-zA-Z]+', '', t)
-
-        # Clean spaces around operators
-        t = re.sub(r'\s*([+\-*/=])\s*', r'\1', t)
-
-        # Implicit multiplication
-        t = re.sub(r'(\d)([a-zA-Z])', r'\1*\2', t)
-        t = re.sub(r'([a-zA-Z])(\d)', r'\1*\2', t)
-
-        # Strip SymPy-illegal chars
-        t = re.sub(r'[^0-9a-zA-Z+\-*/=().*_ ]', '', t)
-        t = re.sub(r'[+\-*/=]+$', '', t)
-
-        return t.strip()
-
-    # ------------------------------------------------------------------ #
-    #  Tier 2: EasyOCR — returns ALL candidates sorted by math score      #
+    #  Tier 2: EasyOCR                                                     #
     # ------------------------------------------------------------------ #
 
     def _get_reader(self) -> object:
