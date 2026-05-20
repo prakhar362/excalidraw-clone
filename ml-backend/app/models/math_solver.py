@@ -1,10 +1,11 @@
 """
 Math Solver - 4-tier OCR pipeline:
 
-  Tier 0 → Gemini Vision   (multimodal LLM, most accurate for handwriting)
-  Tier 1 → pix2tex         (ViT trained on handwritten math → LaTeX)
-  Tier 2 → EasyOCR         (multi-pass with multi-interpretation retry)
-  Tier 3 → Contour         (OpenCV symbol segmentation fallback)
+  Tier 0 → Roboflow Inference (workflow for math detection)
+  Tier 1 → Gemini Vision      (multimodal LLM, most accurate for handwriting)
+  Tier 2 → pix2tex            (ViT trained on handwritten math → LaTeX)
+  Tier 3 → EasyOCR            (multi-pass with multi-interpretation retry)
+  Tier 4 → Contour            (OpenCV symbol segmentation fallback)
 
 Then SymPy solves the resulting equation string.
 """
@@ -30,7 +31,7 @@ class MathSolver:
     _pix2tex_mdl: Optional[object]         = None   # pix2tex singleton
 
     def __init__(self):
-        print("Initializing Math Solver (Gemini Vision + pix2tex + EasyOCR + SymPy)...")
+        print("Initializing Math Solver (Roboflow + Gemini Vision + pix2tex + EasyOCR + SymPy)...")
 
     # ------------------------------------------------------------------ #
     #  Public API                                                          #
@@ -46,7 +47,16 @@ class MathSolver:
         print("MATH SOLVER: starting recognition")
         print("="*55)
 
-        # ── Tier 0: Gemini Vision (best for handwritten math) ─────────
+        # ── Tier 0: Roboflow Inference (workflow for math detection) ──
+        roboflow_eq = self._roboflow_read(image)
+        if roboflow_eq:
+            print(f"Roboflow read: '{roboflow_eq}'")
+            for interp in self._generate_interpretations(roboflow_eq):
+                result = self._try_solve(interp)
+                if result:
+                    return result
+
+        # ── Tier 1: Gemini Vision (best for handwritten math) ─────────
         gemini_eq = self._gemini_read(image)
         if gemini_eq:
             print(f"Gemini Vision read: '{gemini_eq}'")
@@ -55,7 +65,7 @@ class MathSolver:
                 if result:
                     return result
 
-        # ── Tier 1: pix2tex ───────────────────────────────────────────
+        # ── Tier 2: pix2tex ───────────────────────────────────────────
         latex_str = self._pix2tex_read(image)
         if latex_str:
             eq = self._latex_to_equation(latex_str)
@@ -64,7 +74,7 @@ class MathSolver:
             if result:
                 return result
 
-        # ── Tier 2: EasyOCR (multi-pass, multi-interpretation) ────────
+        # ── Tier 3: EasyOCR (multi-pass, multi-interpretation) ────────
         candidates = self._easyocr_all_candidates(image)
         print(f"EasyOCR candidates: {[c for c,_ in candidates]}")
 
@@ -75,7 +85,7 @@ class MathSolver:
                 if result:
                     return result
 
-        # ── Tier 3: Contour fallback ───────────────────────────────────
+        # ── Tier 4: Contour fallback ───────────────────────────────────
         preprocessed = self._preprocess(image)
         fallback = self._contour_fallback(preprocessed)
         print(f"Contour fallback  : '{fallback}'")
@@ -94,7 +104,7 @@ class MathSolver:
             result = self._solve_equation(equation_str)
             sol_str = ", ".join(result["solution"])
             print(f"\n{'='*55}")
-            print(f"✅  SOLVED  :  {equation_str}")
+            print(f" SOLVED  :  {equation_str}")
             print(f"   Solution :  {sol_str}")
             print(f"{'='*55}\n")
             return {
@@ -109,7 +119,78 @@ class MathSolver:
             return None
 
     # ------------------------------------------------------------------ #
-    #  Tier 0: Gemini Vision                                               #
+    #  Tier 0: Roboflow Inference                                          #
+    # ------------------------------------------------------------------ #
+
+    def _roboflow_read(self, image: Image.Image) -> str:
+        """
+        Use Roboflow Inference SDK to detect and read math equations.
+        Returns a plain equation string like 'x+3=5', or '' on failure.
+        """
+        api_key = os.environ.get("ROBOFLOW_API_KEY", "")
+        if not api_key:
+            print("Roboflow: ROBOFLOW_API_KEY not set, skipping")
+            return ""
+
+        try:
+            from inference_sdk import InferenceHTTPClient
+            
+            # Save image to temp file
+            temp_path = "temp_math_image.jpg"
+            image.save(temp_path, format="JPEG")
+            
+            # Connect to Roboflow workflow
+            client = InferenceHTTPClient(
+                api_url="https://serverless.roboflow.com",
+                api_key=api_key
+            )
+            
+            # Run workflow
+            result = client.run_workflow(
+                workspace_name="prakhar-yc6s2",
+                workflow_id="detect-count-and-visualize",
+                images={"image": temp_path},
+                use_cache=True
+            )
+            
+            # Clean up temp file
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+            
+            # Extract equation from result
+            # The workflow should return detected text/equation
+            if result and isinstance(result, list) and len(result) > 0:
+                output = result[0]
+                # Try to extract text from various possible response formats
+                equation = ""
+                
+                if isinstance(output, dict):
+                    # Try common keys
+                    for key in ['text', 'equation', 'detected_text', 'ocr_text', 'output']:
+                        if key in output:
+                            equation = str(output[key])
+                            break
+                    
+                    # If predictions array exists
+                    if 'predictions' in output and output['predictions']:
+                        pred = output['predictions'][0]
+                        if isinstance(pred, dict) and 'class' in pred:
+                            equation = str(pred['class'])
+                
+                if equation:
+                    print(f"Roboflow raw output: '{equation}'")
+                    equation = self._clean_math_text(equation)
+                    return equation
+            
+            print("Roboflow: No equation detected in response")
+            return ""
+            
+        except Exception as e:
+            print(f"Roboflow error: {e}")
+            return ""
+
+    # ------------------------------------------------------------------ #
+    #  Tier 1: Gemini Vision                                               #
     # ------------------------------------------------------------------ #
 
     def _gemini_read(self, image: Image.Image) -> str:

@@ -18,6 +18,10 @@ class Config:
     INTENT_MODEL = "google/vit-base-patch16-224"
     HANDWRITING_MODEL = "microsoft/trocr-base-handwritten"
     
+    # API Keys
+    ROBOFLOW_API_KEY = os.getenv("ROBOFLOW_API_KEY", "LLL8OBFzk7W505VY9Fem")
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+    
     # Paths
     BASE_DIR = Path(__file__).parent.parent
     TEMP_DIR = BASE_DIR / "temp"

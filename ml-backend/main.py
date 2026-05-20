@@ -113,14 +113,21 @@ async def process_sketch(
                     "recognized": result.get("recognized", "")
                 })
             
-            # Create text elements for solution
-            solution_elements = []
-            y_offset = 0
+            # Get image dimensions for font size calculation
+            img_width, img_height = image.size
             
-            for step in result["steps"]:
-                elem = vectorizer.text_to_excalidraw(step, x=0, y=y_offset)
-                solution_elements.append(elem)
-                y_offset += 35
+            # Create a SINGLE text element with all solution steps
+            # Join steps with newlines for multi-line display
+            solution_text = "\n".join(result["steps"])
+            
+            # Create one text element (no duplicates, no icons)
+            text_element = vectorizer.text_to_excalidraw(
+                solution_text, 
+                x=0, 
+                y=0,
+                input_width=img_width,
+                input_height=img_height
+            )
             
             return JSONResponse({
                 "success": True,
@@ -131,13 +138,23 @@ async def process_sketch(
                 "latex": result["latex"],
                 "solution": result["solution"],
                 "steps": result["steps"],
-                "elements": solution_elements,
+                "elements": [text_element],  # Single element only
                 "message": f"Solved: {result['original_equation']} → {', '.join(result['solution'])}"
             })
         
         elif intent == "handwriting":
             text = handwriting_recognizer.recognize(image)
-            text_element = vectorizer.text_to_excalidraw(text, x=0, y=0)
+            
+            # Get image dimensions for font size calculation
+            img_width, img_height = image.size
+            
+            text_element = vectorizer.text_to_excalidraw(
+                text, 
+                x=0, 
+                y=0,
+                input_width=img_width,
+                input_height=img_height
+            )
             
             return JSONResponse({
                 "success": True,

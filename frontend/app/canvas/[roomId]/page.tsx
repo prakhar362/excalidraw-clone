@@ -7,8 +7,9 @@ import { RoomChat } from '@/components/RoomChat';
 import { useParams } from 'next/navigation';
 import { BACKEND_URL, WSS_URL } from '../../../config';
 // convertToExcalidrawElements is dynamically imported inside generateFromAI to avoid SSR issues
-import { ToastContainer } from 'react-toastify';
+import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+import { mlService } from '@/lib/mlService';
 
 const Excalidraw = dynamic(
   () => import('@excalidraw/excalidraw').then((mod) => mod.Excalidraw),
@@ -70,6 +71,40 @@ export default function CanvasPage() {
         console.error("Token decode error", e);
       }
     }
+  }, []);
+
+  // ML Backend Health Check on Page Load
+  useEffect(() => {
+    const checkMLBackend = async () => {
+      try {
+        const isHealthy = await mlService.checkHealth();
+        if (isHealthy) {
+          toast.success('🤖 ML Backend Connected', {
+            position: 'top-right',
+            autoClose: 2000,
+            hideProgressBar: false,
+            closeOnClick: true,
+            pauseOnHover: true,
+            draggable: true,
+          });
+          console.log('✅ ML Backend is healthy and ready');
+        } else {
+          toast.warning('⚠️ ML Backend unavailable', {
+            position: 'top-right',
+            autoClose: 3000,
+          });
+          console.warn('⚠️ ML Backend health check returned unhealthy status');
+        }
+      } catch (error) {
+        toast.error('❌ ML Backend connection failed', {
+          position: 'top-right',
+          autoClose: 3000,
+        });
+        console.error('❌ ML Backend health check failed:', error);
+      }
+    };
+
+    checkMLBackend();
   }, []);
 
   // 2. Load Drawing History

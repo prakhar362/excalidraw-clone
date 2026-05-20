@@ -78,19 +78,45 @@ class Vectorizer:
         
         return elements
     
-    def text_to_excalidraw(self, text: str, x: float = 0, y: float = 0) -> Dict:
+    def text_to_excalidraw(self, text: str, x: float = 0, y: float = 0, input_width: int = 0, input_height: int = 0) -> Dict:
         """
-        Create Excalidraw text element
+        Create Excalidraw text element with proper formatting
+        
+        Args:
+            text: Text content to display
+            x: X position
+            y: Y position
+            input_width: Width of input image (for font size calculation)
+            input_height: Height of input image (for font size calculation)
         """
+        # Calculate font size based on input dimensions
+        # Default to medium (28px), scale up for larger inputs
+        base_font_size = 28
+        
+        if input_width > 0 and input_height > 0:
+            # If input is large, use larger font
+            max_dim = max(input_width, input_height)
+            if max_dim > 800:
+                base_font_size = 36  # Large
+            elif max_dim > 400:
+                base_font_size = 28  # Medium
+            else:
+                base_font_size = 20  # Small
+        
+        # Calculate text width (approximate)
+        char_width = base_font_size * 0.6
+        text_width = len(text) * char_width
+        text_height = base_font_size * 1.5
+        
         return {
             "id": f"ml_text_{uuid.uuid4().hex[:8]}",
             "type": "text",
             "x": x,
             "y": y,
-            "width": len(text) * 10,
-            "height": 25,
+            "width": text_width,
+            "height": text_height,
             "angle": 0,
-            "strokeColor": "#000000",
+            "strokeColor": "#000000",  # Black text
             "backgroundColor": "transparent",
             "fillStyle": "solid",
             "strokeWidth": 1,
@@ -98,9 +124,11 @@ class Vectorizer:
             "roughness": 0,
             "opacity": 100,
             "text": text,
-            "fontSize": 20,
-            "fontFamily": 1,
+            "fontSize": base_font_size,
+            "fontFamily": 1,  # Virgil (Excalidraw default)
             "textAlign": "left",
             "verticalAlign": "top",
-            "baseline": 18,
+            "baseline": base_font_size * 0.9,
+            "containerId": None,
+            "originalText": text,
         }
