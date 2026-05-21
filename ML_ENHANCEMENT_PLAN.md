@@ -15,14 +15,14 @@
 
 ---
 
-## 🎯 Priority 1: Handwriting to Beautiful Text Conversion
+## 🎯 Priority 1: Handwriting to Beautiful Text Conversion (done)
 
 ### Problem
 Users draw messy handwritten text on canvas → We need to convert it to clean, beautifully formatted text elements with AI-suggested styling.
 
 ### Solution: Multi-Model Pipeline
 
-#### Model 1: Text Detection (DBNet)
+#### Model 1: Text Detection (DBNet) -done
 **Purpose:** Detect all text regions in the canvas
 - **Model:** `DBNet` (Differentiable Binarization Network)
 - **Pretrained:** `dbnet_resnet18` from PaddleOCR or MMOCRv1.0
@@ -37,7 +37,7 @@ ocr = PaddleOCR(use_angle_cls=True, lang='en', use_gpu=False)
 result = ocr.ocr(image, cls=True)
 ```
 
-#### Model 2: Handwriting Recognition (TrOCR-Large)
+#### Model 2: Handwriting Recognition (TrOCR-Large) -done 
 **Purpose:** Convert handwritten text to digital text
 - **Current:** TrOCR-small-handwritten (limited accuracy)
 - **Upgrade to:** `microsoft/trocr-large-handwritten`

@@ -1,119 +1,72 @@
-"""
-Text Detector - Multi-region text detection using pure OpenCV.
-No external OCR packages needed — works on Render free tier.
-
-Strategy:
-  1. Binarise the image (Otsu threshold on inverted grayscale)
-  2. Dilate horizontally to merge characters into word blobs
-  3. Find external contours → bounding boxes
-  4. Filter by aspect ratio / area to keep only text-like regions
-  5. Sort left→right, top→bottom
-"""
-
-import cv2
+import easyocr
 import numpy as np
 from PIL import Image
 from typing import List, Dict
 
-
 class TextDetector:
     """
-    Detects text regions using OpenCV morphological operations.
-    Each detected region is later passed to TrOCR for recognition.
+    Enhanced text detector with better filtering
     """
-
+    
     def __init__(self):
-        print("Initializing Text Detector (OpenCV)...")
-        # No model to load — pure CV
-
+        print("Initializing EasyOCR Text Detector...")
+        try:
+            # Add more languages if needed: ['en', 'ch_sim', 'hi', etc.]
+            self.reader = easyocr.Reader(['en'], gpu=False, verbose=False)
+            print("✅ EasyOCR loaded successfully!")
+        except Exception as e:
+            print(f"❌ Failed to load EasyOCR: {e}")
+            self.reader = None
+    
     def detect_regions(self, image: Image.Image) -> List[Dict]:
         """
-        Detect candidate text regions in the image.
-
-        Returns a list of dicts:
-          { id, bbox: {x,y,width,height}, center: {x,y}, text: "" }
-        The 'text' field is intentionally empty here — the caller
-        (main.py) fills it in by running TrOCR on each cropped region.
+        Detect text regions with improved filtering
         """
-        img = np.array(image.convert("RGB"))
-        gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-
-        # ── 1. Upscale small images so morphology works better ──────────
-        h, w = gray.shape
-        if max(h, w) < 600:
-            scale = 600 / max(h, w)
-            gray = cv2.resize(gray, (int(w * scale), int(h * scale)),
-                              interpolation=cv2.INTER_CUBIC)
-            scale_x, scale_y = scale, scale
-        else:
-            scale_x, scale_y = 1.0, 1.0
-
-        # ── 2. Binarise ─────────────────────────────────────────────────
-        # Invert so strokes are white on black, then Otsu threshold
-        inv = cv2.bitwise_not(gray)
-        _, binary = cv2.threshold(inv, 0, 255,
-                                  cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-
-        # ── 3. Dilate horizontally to merge characters into word blobs ──
-        # Kernel width ~20px merges chars; height ~3px keeps lines separate
-        kw = max(15, int(w * scale_x * 0.04))
-        kh = 3
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kw, kh))
-        dilated = cv2.dilate(binary, kernel, iterations=1)
-
-        # ── 4. Find contours ────────────────────────────────────────────
-        contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL,
-                                       cv2.CHAIN_APPROX_SIMPLE)
-
-        img_area = gray.shape[0] * gray.shape[1]
-        regions: List[Dict] = []
-
-        for idx, cnt in enumerate(contours):
-            x, y, bw, bh = cv2.boundingRect(cnt)
-            area = bw * bh
-
-            # Filter: skip tiny noise and full-image blobs
-            if area < 200:
-                continue
-            if area > img_area * 0.9:
-                continue
-            # Skip very tall/narrow blobs (likely a single vertical stroke)
-            aspect = bw / max(bh, 1)
-            if aspect < 0.5:
-                continue
-
-            # Map back to original image coordinates
-            ox = int(x / scale_x)
-            oy = int(y / scale_y)
-            ow = int(bw / scale_x)
-            oh = int(bh / scale_y)
-
-            regions.append({
-                "id":     f"region_{idx}",
-                "text":   "",          # filled by TrOCR in main.py
-                "confidence": 1.0,     # detection confidence (CV has no score)
-                "bbox":   {"x": ox, "y": oy, "width": ow, "height": oh},
-                "center": {"x": ox + ow / 2, "y": oy + oh / 2},
-            })
-
-        # ── 5. Sort top→bottom, left→right ─────────────────────────────
-        regions.sort(key=lambda r: (r["center"]["y"], r["center"]["x"]))
-
-        print(f"OpenCV TextDetector: found {len(regions)} region(s)")
-        return regions
-
-    def group_regions_by_proximity(self, regions: List[Dict],
-                                   distance_threshold: float = 50) -> List[List[Dict]]:
-        """Group vertically close regions into paragraphs."""
-        if not regions:
+        if not self.reader:
             return []
-
-        groups, current = [], [regions[0]]
-        for region in regions[1:]:
-            if abs(region["center"]["y"] - current[-1]["center"]["y"]) <= distance_threshold:
-                current.append(region)
-            else:
-                groups.append(current)
-                current = [region]
-        groups.append(current)
-        return groups
+        
+        img_np = np.array(image.convert("RGB"))
+        
+        # Adjust EasyOCR parameters for better detection
+        results = self.reader.readtext(
+            img_np,
+            paragraph=False,  # Don't merge lines
+            min_size=10,      # Minimum box size
+            text_threshold=0.5,  # Text detection threshold
+            low_text=0.3,     # Lower bound for text probability
+            link_threshold=0.3,  # Link between text regions
+            canvas_size=2560,  # Max image size
+            mag_ratio=1.5,    # Image magnification
+        )
+        
+        regions: List[Dict] = []
+        
+        for idx, (bbox, text, prob) in enumerate(results):
+            (tl, tr, br, bl) = bbox
+            
+            x = int(tl[0])
+            y = int(tl[1])
+            w = int(br[0] - tl[0])
+            h = int(br[1] - tl[1])
+            
+            # More lenient filtering
+            if w < 15 or h < 15:  # Minimum size
+                continue
+            
+            # Skip very low confidence (but be more lenient)
+            if prob < 0.1:
+                continue
+            
+            regions.append({
+                "id": f"region_{idx}",
+                "text": "",  # Leave empty for TrOCR
+                "confidence": float(prob),
+                "bbox": {"x": x, "y": y, "width": w, "height": h},
+                "center": {"x": x + w / 2.0, "y": y + h / 2.0},
+            })
+        
+        # Sort top→bottom, left→right
+        regions.sort(key=lambda r: (r["center"]["y"], r["center"]["x"]))
+        
+        print(f"EasyOCR: found {len(regions)} valid text region(s)")
+        return regions
