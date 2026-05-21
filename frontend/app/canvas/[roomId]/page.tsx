@@ -9,7 +9,7 @@ import { BACKEND_URL, WSS_URL } from '../../../config';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { mlService } from '@/lib/mlService';
-import { syncImagesToCloudinary, restoreImagesFromElements } from '@/lib/imageService';
+import { syncImagesToCloudinary, restoreImagesFromElements, uploadImageToCloudinary } from '@/lib/imageService';
 
 // HuggingFace Space root — pinged on load to wake the container
 const HF_SPACE_ROOT = 'https://sanprakhar362-paddleocr.hf.space/';
@@ -81,15 +81,41 @@ export default function CanvasPage() {
     fetch(`${BACKEND_URL}/chats/${roomId}`)
       .then(r => r.json())
       .then(async data => {
-        const allElements: any[] = [];
-        (data.messages || []).reverse().forEach((msg: any) => {
-          try { allElements.push(...JSON.parse(msg.message)); } catch {}
-        });
+        if (!data.messages || data.messages.length === 0) return;
+
+        // The messages are sorted newest first, so index 0 is the latest save!
+        const latestMsg = data.messages[0];
+        let latestElements: any[] = [];
+        try {
+          latestElements = JSON.parse(latestMsg.message);
+        } catch (e) {
+          console.error("Failed to parse latest message elements", e);
+        }
 
         const apply = async () => {
           if (!excalidrawAPIRef.current) { setTimeout(apply, 500); return; }
-          excalidrawAPIRef.current.updateScene({ elements: mergeElements([], allElements) });
-          await restoreImagesFromElements(excalidrawAPIRef.current, allElements);
+
+          // Pre-populate the files map from the elements' Cloudinary URLs
+          const imageElements = latestElements.filter(
+            (el: any) => el.type === 'image' && el.fileId && el.cloudinaryUrl
+          );
+          const filesRecord: Record<string, any> = {};
+          imageElements.forEach((el: any) => {
+            filesRecord[el.fileId] = {
+              id:       el.fileId,
+              dataURL:  el.cloudinaryUrl,
+              mimeType: el.mimeType || 'image/png',
+              created:  Date.now(),
+            };
+          });
+
+          // Atomically update elements and files in the scene state
+          excalidrawAPIRef.current.updateScene({
+            elements: latestElements,
+            files: filesRecord,
+          });
+
+          await restoreImagesFromElements(excalidrawAPIRef.current, latestElements);
         };
         apply();
       });
@@ -188,7 +214,7 @@ User Request: ${aiPrompt}` }] }],
       const data = await res.json();
       const aiText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
       if (!aiText) throw new Error('Empty AI response');
-      const jsonMatch = aiText.match(/\[.*\]/s);
+      const jsonMatch = aiText.match(/\[[\s\S]*\]/);
       if (!jsonMatch) throw new Error('Invalid AI Response');
       const parsedJson = JSON.parse(jsonMatch[0]);
       const fixedJson = parsedJson.map((el: any) => {
@@ -217,22 +243,54 @@ User Request: ${aiPrompt}` }] }],
     if (!token || !elements || !roomId) return;
     setSaveStatus('saving');
     try {
-      const files    = excalidrawAPIRef.current?.getFiles() ?? {};
-      // Embed cloudinaryUrl so images survive page refresh
-      const enriched = elements.map((el: any) => {
+      const files = excalidrawAPIRef.current?.getFiles() ?? {};
+      
+      // Perform uploads for any base64 images in the scene first in parallel
+      const enriched = await Promise.all(elements.map(async (el: any) => {
         if (el.type === 'image' && el.fileId) {
           const f = files[el.fileId];
-          if (f?.dataURL?.startsWith('http')) return { ...el, cloudinaryUrl: f.dataURL, mimeType: f.mimeType };
+          if (f) {
+            if (f.dataURL?.startsWith('http')) {
+              return { ...el, cloudinaryUrl: f.dataURL, mimeType: f.mimeType };
+            } else if (f.dataURL?.startsWith('data:')) {
+              try {
+                console.log(`[Save] Uploading image ${el.fileId} to Cloudinary...`);
+                const result = await uploadImageToCloudinary(f.dataURL, token);
+                if (result.success) {
+                  // Add it to Excalidraw files
+                  excalidrawAPIRef.current.addFiles([{
+                    id:       el.fileId,
+                    dataURL:  result.url,
+                    mimeType: f.mimeType,
+                    created:  Date.now(),
+                  }]);
+                  uploadedImageIds.current.add(el.fileId);
+                  console.log(`[Save] ✅ Image ${el.fileId} successfully uploaded -> ${result.url}`);
+                  return { ...el, cloudinaryUrl: result.url, mimeType: f.mimeType };
+                }
+              } catch (err) {
+                console.error(`[Save] Failed to upload image ${el.fileId}:`, err);
+              }
+            }
+          }
+          // If no file found in files map, check if the element already has a cloudinaryUrl
+          if (el.cloudinaryUrl) {
+            return el;
+          }
         }
         return el;
-      });
+      }));
+
       const res = await fetch(`${BACKEND_URL}/chats/${roomId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: token },
         body: JSON.stringify({ message: JSON.stringify(enriched) }),
       });
       if (res.ok) { setSaveStatus('saved'); setTimeout(() => setSaveStatus('idle'), 1500); }
-    } catch { setSaveStatus('idle'); }
+    } catch (e) {
+      console.error("Save error:", e);
+      setSaveStatus('idle');
+    }
   };
 
   const handleShare    = () => { setShowShare(true); setCopied(false); };
