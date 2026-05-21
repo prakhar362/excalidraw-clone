@@ -60,6 +60,7 @@ async function addElementsToCanvas(api: any, rawElements: any[], offsetX = 0, of
 export const MLToolbar: React.FC<MLToolbarProps> = ({ excalidrawAPI }) => {
   const [processing, setProcessing] = useState(false);
   const [activeBtn,  setActiveBtn]  = useState<string | null>(null);
+  const [statusMsg,  setStatusMsg]  = useState<string>('');
   const [isHealthy,  setIsHealthy]  = useState(false);
   const [mathResult, setMathResult] = useState<MathResult | null>(null);
 
@@ -106,12 +107,14 @@ export const MLToolbar: React.FC<MLToolbarProps> = ({ excalidrawAPI }) => {
     label: string,
     fn: (blob: Blob) => Promise<any>,
     onSuccess: (result: any) => void,
+    waitMsg = 'Processing…',
   ) => {
     const ids = getSelectedIds(excalidrawAPI);
     if (ids.length === 0) { toast.error('Select elements first'); return; }
 
     setProcessing(true);
     setActiveBtn(label);
+    setStatusMsg(waitMsg);
     setMathResult(null);
 
     try {
@@ -130,6 +133,7 @@ export const MLToolbar: React.FC<MLToolbarProps> = ({ excalidrawAPI }) => {
     } finally {
       setProcessing(false);
       setActiveBtn(null);
+      setStatusMsg('');
     }
   }, [excalidrawAPI]);
 
@@ -164,12 +168,16 @@ export const MLToolbar: React.FC<MLToolbarProps> = ({ excalidrawAPI }) => {
     toast.success(`✅ Solved: ${result.equation} → ${result.solution.join(', ')}`);
   });
 
-  // Text → /api/ml/text
-  const handleText = () => run('text', mlService.recognizeText.bind(mlService), async (result) => {
-    await addElementsToCanvas(excalidrawAPI, result.elements);
-    const count = result.regions_count ?? 1;
-    toast.success(`✨ Recognized ${count} text region${count > 1 ? 's' : ''}`);
-  });
+  // Text → /api/ml/text  (no client timeout — HF cold start can take ~2 min)
+  const handleText = () => run(
+    'text',
+    mlService.recognizeText.bind(mlService),
+    async (result) => {
+      await addElementsToCanvas(excalidrawAPI, result.elements);
+      toast.success(`✨ Recognized: "${result.text}"`);
+    },
+    '🔥 Waking up AI… may take ~2 min on first use',
+  );
 
   // Sketch → /api/ml/sketch
   const handleSketch = () => run('sketch', mlService.enhanceSketch.bind(mlService), async (result) => {
@@ -181,10 +189,15 @@ export const MLToolbar: React.FC<MLToolbarProps> = ({ excalidrawAPI }) => {
     toast.success('🎨 Sketch enhanced!');
   });
 
-  // Detect → /api/ml/detect
-  const handleDetect = () => run('detect', mlService.detectIntent.bind(mlService), (result) => {
-    toast.info(`🔍 Detected: ${result.intent} (${(result.confidence * 100).toFixed(0)}%)`);
-  });
+  // Detect → /api/ml/detect  (fast — pure OpenCV heuristics, no HF call)
+  const handleDetect = () => run(
+    'detect',
+    mlService.detectIntent.bind(mlService),
+    (result) => {
+      toast.info(`🔍 Detected: ${result.intent} (${(result.confidence * 100).toFixed(0)}%)`);
+    },
+    '🔍 Detecting…',
+  );
 
   // ── Render ───────────────────────────────────────────────────────────
 
@@ -239,6 +252,11 @@ export const MLToolbar: React.FC<MLToolbarProps> = ({ excalidrawAPI }) => {
         </div>
 
         <p className="text-[10px] text-gray-400 mt-3 text-center">Select elements → click</p>
+        {statusMsg && (
+          <p className="text-[10px] text-amber-600 font-medium mt-1 text-center leading-tight">
+            {statusMsg}
+          </p>
+        )}
       </div>
 
       {/* ── Math result panel ── */}

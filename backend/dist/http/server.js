@@ -21,6 +21,8 @@ const mongoose_1 = __importDefault(require("mongoose"));
 const passport_1 = __importDefault(require("passport"));
 const passport_google_oauth20_1 = require("passport-google-oauth20");
 const dotenv_1 = __importDefault(require("dotenv"));
+const multer_1 = __importDefault(require("multer"));
+const cloudinary_1 = require("cloudinary");
 const middleware_1 = require("./middleware");
 const User_1 = require("../models/User");
 const Room_1 = require("../models/Room");
@@ -28,6 +30,17 @@ const Chat_1 = require("../models/Chat");
 const Message_1 = require("../models/Message");
 const nodemailer_1 = __importDefault(require("nodemailer"));
 dotenv_1.default.config();
+// ── Cloudinary config ─────────────────────────────────────────────────────────
+cloudinary_1.v2.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+// multer: store uploads in memory (no disk writes needed)
+const upload = (0, multer_1.default)({
+    storage: multer_1.default.memoryStorage(),
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB max
+});
 passport_1.default.use(new passport_google_oauth20_1.Strategy({
     clientID: process.env.GOOGLE_CLIENT_ID,
     clientSecret: process.env.GOOGLE_CLIENT_SECRET,
@@ -355,5 +368,41 @@ function createExpressApp() {
         const frontendUrl = "https://sketchcalibur.vercel.app/dashboard";
         return res.redirect(`${frontendUrl}?token=${token}`);
     });
+    // ---------------------- UPLOAD IMAGE TO CLOUDINARY ----------------------
+    // Called by the frontend whenever an image element is pasted/inserted.
+    // Returns a permanent Cloudinary URL that replaces the base64 dataURL.
+    app.post('/upload-image', middleware_1.middleware, upload.single('image'), (req, res) => __awaiter(this, void 0, void 0, function* () {
+        try {
+            if (!req.file) {
+                return res.status(400).json({ message: 'No image file provided' });
+            }
+            // Upload buffer to Cloudinary
+            const result = yield new Promise((resolve, reject) => {
+                const stream = cloudinary_1.v2.uploader.upload_stream({
+                    folder: 'sketchcalibur',
+                    resource_type: 'image',
+                    // Keep original quality — canvas images should not be compressed
+                    quality: 'auto:best',
+                }, (error, result) => {
+                    if (error)
+                        reject(error);
+                    else
+                        resolve(result);
+                });
+                stream.end(req.file.buffer);
+            });
+            res.json({
+                success: true,
+                url: result.secure_url,
+                publicId: result.public_id,
+                width: result.width,
+                height: result.height,
+            });
+        }
+        catch (e) {
+            console.error('Cloudinary upload error:', e);
+            res.status(500).json({ message: 'Image upload failed' });
+        }
+    }));
     return app;
 }

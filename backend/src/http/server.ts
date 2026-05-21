@@ -6,6 +6,8 @@ import mongoose from 'mongoose';
 import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import dotenv from 'dotenv';
+import multer from 'multer';
+import { v2 as cloudinary } from 'cloudinary';
 import { middleware } from './middleware';
 import { User } from '../models/User';
 import { Room } from '../models/Room';
@@ -14,6 +16,19 @@ import { Message } from '../models/Message';
 import nodemailer from 'nodemailer';
 
 dotenv.config();
+
+// ── Cloudinary config ─────────────────────────────────────────────────────────
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME!,
+  api_key:    process.env.CLOUDINARY_API_KEY!,
+  api_secret: process.env.CLOUDINARY_API_SECRET!,
+});
+
+// multer: store uploads in memory (no disk writes needed)
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB max
+});
 passport.use(
   new GoogleStrategy(
     {
@@ -417,6 +432,45 @@ app.get(
     return res.redirect(`${frontendUrl}?token=${token}`);
   }
 );
+
+// ---------------------- UPLOAD IMAGE TO CLOUDINARY ----------------------
+// Called by the frontend whenever an image element is pasted/inserted.
+// Returns a permanent Cloudinary URL that replaces the base64 dataURL.
+app.post('/upload-image', middleware, upload.single('image'), async (req: any, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: 'No image file provided' });
+    }
+
+    // Upload buffer to Cloudinary
+    const result = await new Promise<any>((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(
+        {
+          folder:         'sketchcalibur',
+          resource_type:  'image',
+          // Keep original quality — canvas images should not be compressed
+          quality:        'auto:best',
+        },
+        (error, result) => {
+          if (error) reject(error);
+          else resolve(result);
+        }
+      );
+      stream.end(req.file!.buffer);
+    });
+
+    res.json({
+      success:  true,
+      url:      result.secure_url,
+      publicId: result.public_id,
+      width:    result.width,
+      height:   result.height,
+    });
+  } catch (e) {
+    console.error('Cloudinary upload error:', e);
+    res.status(500).json({ message: 'Image upload failed' });
+  }
+});
 
   return app;
 }

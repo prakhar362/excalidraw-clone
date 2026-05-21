@@ -45,6 +45,39 @@ async def load_models():
     text_styler            = TextStyler()
     print("All models loaded successfully!")
 
+    # ── Warm up the HuggingFace Space so the first user request is fast ──
+    # Runs in the background — does not block startup or delay port binding.
+    import asyncio
+    asyncio.create_task(_warmup_hf())
+
+
+async def _warmup_hf():
+    """
+    Ping the HuggingFace Space root endpoint in the background at startup.
+    This wakes the container and loads the 1.92 GB model into RAM so the
+    first real user request doesn't have to wait 2 minutes.
+    """
+    import asyncio
+    import requests as _req
+
+    hf_root = handwriting_recognizer.HF_API_URL.replace("/predict", "/")
+    print(f"🔥 Warming up HuggingFace Space: {hf_root}")
+
+    for attempt in range(1, 4):          # up to 3 pings, 30s apart
+        try:
+            resp = _req.get(hf_root, timeout=60)
+            if resp.status_code < 500:
+                print(f"✅ HuggingFace Space is warm (status {resp.status_code})")
+                return
+            print(f"   Ping {attempt}: status {resp.status_code}, retrying…")
+        except Exception as e:
+            print(f"   Ping {attempt} failed: {e}, retrying…")
+
+        await asyncio.sleep(30)
+
+    print("⚠️  HuggingFace Space did not respond to warm-up pings — "
+          "first text request may be slow.")
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 

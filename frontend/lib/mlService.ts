@@ -2,8 +2,13 @@ import axios from 'axios';
 
 const ML_API_BASE = process.env.NEXT_PUBLIC_ML_API_URL || 'http://localhost:8000';
 
-const TIMEOUT_DEFAULT = 30_000;
-const TIMEOUT_MATH    = 90_000; // Roboflow + Gemini can be slow
+// Math: Roboflow + Gemini can each take ~30s
+const TIMEOUT_MATH = 90_000;
+// Text: HF cold start can take up to 2 minutes; no cap — let the backend's
+//       own 180s timeout be the limit rather than killing it client-side.
+const TIMEOUT_TEXT = 0; // 0 = no axios timeout (browser won't cancel)
+// Sketch / Detect / Enhance: pure local CV, always fast
+const TIMEOUT_FAST = 30_000;
 
 // ── Response types ────────────────────────────────────────────────────────────
 
@@ -51,7 +56,7 @@ class MLService {
     const fd = this._formData(imageBlob);
     const res = await axios.post(`${ML_API_BASE}/api/ml/enhance`, fd, {
       headers: { 'Content-Type': 'multipart/form-data' },
-      timeout: TIMEOUT_MATH,
+      timeout: TIMEOUT_MATH, // may route to HF text path
     });
     return res.data;
   }
@@ -67,11 +72,13 @@ class MLService {
   }
 
   // ── 3. Text / Handwriting (dedicated) ────────────────────────────────────
+  // No client-side timeout — HF cold start can take up to 2 min.
+  // The backend itself has a 180s timeout on the HF call.
   async recognizeText(imageBlob: Blob): Promise<MLTextResult> {
     const fd = this._formData(imageBlob);
     const res = await axios.post(`${ML_API_BASE}/api/ml/text`, fd, {
       headers: { 'Content-Type': 'multipart/form-data' },
-      timeout: TIMEOUT_DEFAULT,
+      timeout: TIMEOUT_TEXT,
     });
     return res.data;
   }
@@ -85,17 +92,19 @@ class MLService {
     fd.append('style', style);
     const res = await axios.post(`${ML_API_BASE}/api/ml/sketch`, fd, {
       headers: { 'Content-Type': 'multipart/form-data' },
-      timeout: TIMEOUT_DEFAULT,
+      timeout: TIMEOUT_FAST,
     });
     return res.data;
   }
 
   // ── 5. Detect / classify only ─────────────────────────────────────────────
+  // No client-side timeout — routes through the same HF path when intent
+  // is handwriting, so cold start applies here too.
   async detectIntent(imageBlob: Blob): Promise<MLDetectResult> {
     const fd = this._formData(imageBlob);
     const res = await axios.post(`${ML_API_BASE}/api/ml/detect`, fd, {
       headers: { 'Content-Type': 'multipart/form-data' },
-      timeout: TIMEOUT_DEFAULT,
+      timeout: TIMEOUT_TEXT,
     });
     return res.data;
   }
