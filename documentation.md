@@ -1,83 +1,201 @@
-# SketchCalibur: Custom ML Architecture Roadmap
+# SketchCalibur: ML Architecture — Implementation Record
 
-This document outlines the step-by-step strategy for migrating SketchCalibur from an API-calling wrapper (using Gemini/OpenAI) to a **True AI/ML platform**. We will build, train, and deploy three distinct machine learning models from scratch, optimized for free-tier deployments (Render, Hugging Face, or On-Device).
-
----
-
-## 1. Feature: Artistic Sketch-to-Vector (Image-to-Image)
-**Objective:** Take a messy, human hand-drawn doodle of *anything* (an apple, a car, a face) and transform it into a clean, professional, artistic line drawing that maps perfectly onto the Excalidraw canvas.
-
-### A. Architecture (Pix2Pix Conditional GAN)
-Instead of using massive generic models like Stable Diffusion, we will build a **Pix2Pix GAN** (Generative Adversarial Network) in PyTorch.
-*   **Generator (U-Net):** Learns to clean up noise, connect broken strokes, and smooth out curves.
-*   **Discriminator:** Evaluates the generator's output against real, professional SVG line-art to ensure it looks "professional."
-*   **Post-Processing:** The clean raster output from the GAN is fed into a vectorizer (like Potrace) to extract pure mathematical SVG curves for Excalidraw JSON.
-
-### B. Dataset Strategy (Synthetic Generation)
-We do not need to manually draw thousands of pairs.
-1.  **Target Data (Clean):** Download open-source SVG line art datasets (e.g., Noun Project, Google QuickDraw cleaned, or TU-Berlin).
-2.  **Input Data (Dirty):** Write a Python script to mathematically corrupt the clean SVGs. Apply OpenCV Gaussian noise, break lines using elastic distortions, and simulate shaky hand movements.
-3.  **Result:** 100,000 perfect `[Messy Doodle -> Professional Diagram]` pairs.
-
-### C. Training & Execution
-*   Train on a free Kaggle T4 GPU for ~24-48 hours.
-*   Export the PyTorch model (`.pth`) to **ONNX** format. The final model size will be ~50MB, making it extremely lightweight.
+This document records the actual architecture built, the evolution of decisions made, and the engineering challenges solved. It replaces the original roadmap with ground truth.
 
 ---
 
-## 2. Feature: Mathematical Equation Solver (done)
-**Objective:** Identify, read, and solve handwritten mathematical equations directly from the canvas without relying on paid APIs or hallucination-prone generic OCRs.
+## 1. Feature: Handwritten Text Recognition ✅ DONE
 
-### A. Architecture Strategy 1: Object Detection (Roboflow / YOLOv8) - *First Priority*
-Instead of training a model to read an entire sentence, we use an Object Detection model (YOLOv8 Nano) to detect individual math symbols.
-*   **Model:** YOLOv8 Nano hosted on Roboflow (or exported to ONNX). Size: < 10MB.
-*   **Detection:** Detects bounding boxes for `0-9`, `a-z`, `+`, `-`, `=`, `*`, `/`.
-*   **Post-Processing:** A Python script sorts the detected bounding boxes by their X-coordinates (Left to Right) to reconstruct the equation string (e.g., `x+3=5`).
-*   **Solving:** The reconstructed string is passed to Python's `sympy` library.
-*   **Why this is Priority 1:** YOLOv8n uses practically 0 RAM, runs in milliseconds, and avoids all OOM crashes on Render.
-
-### B. Architecture Strategy 2: CRNN + CTC - *Fallback Plan*
-If Object Detection struggles with overlapping cursive math, we will fall back to a Convolutional Recurrent Neural Network (CRNN).
-*   **Feature Extractor:** MobileNetV3 CNN.
-*   **Sequence Modeler:** LSTM network with CTC loss.
-
-### C. Dataset Strategy
-1.  **Roboflow Universe:** Search for existing "Handwritten Math Symbols" datasets on Roboflow to bootstrap the YOLO model immediately.
-2.  **Synthetic Data:** Use the `sympy` library to generate random equations, render them using handwritten fonts, and add bounding box annotations automatically.
-
-### D. Training & Execution
-*   Train the YOLOv8 model directly on Roboflow (or locally via PyTorch).
-*   Output string is passed to `sympy` for mathematical solving.
+### Objective
+Convert messy, cursive handwriting drawn on the Excalidraw canvas into clean, styled digital text elements — accurately, at zero cost.
 
 ---
 
-## 3. Feature: General Text & Handwriting Detector
-**Objective:** Detect and transcribe general handwritten text blocks on the canvas (labels, sticky notes, diagram text) with high accuracy.
+### Architecture Evolution
 
-### A. Architecture (DBNet + Lightweight Transformer)
-*   **Detection:** Use **DBNet (Differentiable Binarization)**. It is highly robust for detecting text bounding boxes in any orientation or curve (common in canvas sketches).
-*   **Recognition:** A lightweight Vision Transformer (ViT) or a secondary CRNN to convert the cropped bounding box into text.
+#### V1 — Local Ensemble: EasyOCR + TrOCR (Abandoned)
 
-### B. Dataset Strategy
-*   **IAM Handwriting Database:** The standard dataset for full English sentence handwriting recognition.
-*   **SynthText:** Generates synthetic text placed over random backgrounds to teach the model how to read text in noisy environments.
+**Approach:** EasyOCR's CRAFT network detected bounding boxes; Microsoft TrOCR-small recognized characters inside each crop.
+
+**Problems:**
+- TrOCR-small hallucinated heavily on connected cursive, repeating characters infinitely on whitespace.
+- EasyOCR's CRAFT detector fragmented single words into multiple boxes (e.g. "MIA" → "M" + "IA"), causing each fragment to be recognized separately and incorrectly.
+- Packaging `torch`, `transformers`, and `easyocr` together pushed Render's 512 MB free tier into OOM crashes on every cold start.
 
 ---
 
-## 4. Deployment & Hosting Strategy (Zero/Low Cost)
-To host these custom models without paying hundreds of dollars for GPU servers, and to avoid Out-Of-Memory (OOM) crashes on Render's 512MB free tier, we will use the following strategies:
+#### V2 — Local PaddleOCR CRNN (Abandoned)
 
-### Option A: In-Browser ML (Recommended - $0 Cost)
-The ultimate architectural flex. We export all our trained PyTorch models to **ONNX Web** or **TensorFlow.js**.
-*   When a user clicks "Sketch", the model runs directly inside their web browser using WebAssembly and WebGL.
-*   **Pros:** Zero server costs, zero API latency, absolute privacy (images never leave the client).
+**Approach:** Replaced TrOCR with PaddleOCR's lightweight CRNN model.
 
-### Option B: Hugging Face Spaces (Backend API)
-If the models are too heavy for browser inference, we deploy them on Hugging Face.
-*   Hugging Face provides free Docker Spaces with **16GB of RAM and 2 vCPUs**.
-*   We wrap our models in a FastAPI container and deploy them there. The Render backend simply forwards the image to the Hugging Face API.
+**Problems:**
+- Accuracy improved for printed text but remained unreliable on cursive/ambiguous handwriting — no "world knowledge" to disambiguate similar letter shapes.
+- `paddlepaddle` requires Python < 3.13; Render's default runtime is 3.13, causing build failures.
+- Even the CPU-only wheel pushed RAM past 512 MB.
 
-### Option C: ONNX CPU Inference on Render
-If we must keep everything in a single backend monolith on Render:
-*   We convert all PyTorch models to `.onnx`.
-*   ONNX Runtime is heavily optimized for CPU inference and uses a fraction of the RAM that raw PyTorch uses. This prevents Render from crashing while still providing fast inference.
+---
+
+#### V3 — Colab VLM Prototype (Proof of Concept, Not Production)
+
+**Approach:** Ran PaddleOCR-VL-1.5 (~1.92 GB Vision-Language Model) on a Google Colab T4 GPU, exposed via Ngrok as a temporary API.
+
+**Result:** Accuracy was near-perfect — the VLM uses LLM-backed context to disambiguate cursive shapes rather than just matching pixel curves.
+
+**Problems:**
+- Colab is not a production server. Ngrok URLs expired after 2 hours; the runtime timed out after 30 minutes of inactivity.
+- Not deployable.
+
+---
+
+#### V4 — Production: Decoupled Microservices (Current) ✅
+
+**Architecture:**
+
+```
+Frontend (Next.js)
+    │  PNG image (base64)
+    ▼
+Render Backend (FastAPI, ~50 MB RAM)
+    │  HTTP POST  /predict
+    ▼
+Hugging Face Spaces (Docker, 16 GB RAM, 2 vCPU)
+    └─ PaddleOCR-VL-1.5  (1.92 GB, loaded once, stays warm)
+```
+
+- **Render backend** contains zero ML libraries. It is a pure HTTP router using only `requests`, `fastapi`, `opencv-python-headless`, `Pillow`, `numpy`, and `easyocr` (for math solver only).
+- **Hugging Face Spaces** hosts the heavy VLM in a custom FastAPI Docker container. Free tier provides 16 GB RAM and 2 vCPUs — enough to keep the 1.92 GB model resident in memory.
+- The full image is sent directly to HF — no region splitting, no cropping, no fragmentation.
+
+**Result:** >99% accuracy on standard and cursive isolated words. $0/month infrastructure cost. Render RAM reduced by ~90%.
+
+---
+
+### Key Engineering Challenges Solved
+
+#### 1. Word Fragmentation ("MIA" → "M" + "IA")
+
+**Root cause:** EasyOCR's CRAFT detector assigns separate bounding boxes to character groups that have slight spatial separation. Each crop was then sent to the recognizer independently, producing partial results.
+
+**Fix:** Eliminated region-based detection entirely. The full canvas image is sent to the HF VLM in one request. The model reads the whole word in context, not isolated fragments.
+
+---
+
+#### 2. Hardware Precision Bug ("Mia" vs "Lia" on CPU)
+
+**Root cause:** The VLM predicted "Mia" correctly on a Colab GPU (bfloat16 math) but output "Lia" on the HF CPU. CPUs emulate 16-bit float arithmetic, introducing microscopic rounding errors. Because cursive "M" and "L" are geometrically similar, the rounding error flipped the model's top prediction.
+
+**Fix:** Forced 32-bit float precision (`torch_dtype` removed, defaulting to float32) and injected `do_sample=False`, `temperature=0.0` into generation parameters to eliminate stochastic sampling.
+
+---
+
+#### 3. Dependency Version Mismatch on HF Spaces
+
+**Root cause:** HF's default Docker image shipped an older `transformers` version that lacked the `min_pixels` attribute on the image processor, causing a fatal `AttributeError` on startup.
+
+**Fix:** Wrapped the attribute access in `try/except` with `getattr()` fallback to a safe mathematical baseline (`256 × 28 × 28`), making the code version-agnostic.
+
+---
+
+#### 4. Cold Start Timeouts
+
+**Root cause:** Free HF Spaces containers sleep after 48 hours of inactivity. Waking up, loading 1.92 GB into RAM, and processing the first request takes ~2 minutes — exceeding default HTTP timeouts.
+
+**Fix:** Set `timeout=180` on the `requests.post` call in the Render backend. Optionally, a daily cron ping to the HF `/` endpoint keeps the container warm.
+
+---
+
+#### 5. Render OOM on Startup
+
+**Root cause:** `torch`, `torchvision`, `transformers`, `easyocr`, `paddlepaddle` were all listed in `requirements.txt`. Render downloaded and imported all of them on startup, exhausting 512 MB before the server could bind a port.
+
+**Fix:** Stripped all heavy ML packages from `requirements.txt`. Render now installs only: `fastapi`, `uvicorn`, `python-multipart`, `python-dotenv`, `sympy`, `opencv-python-headless`, `Pillow`, `numpy`, `requests`, `google-generativeai`, `easyocr` (math solver only). Total startup RAM: ~120 MB.
+
+---
+
+### Final File Structure
+
+```
+ml-backend/
+├── app/
+│   └── models/
+│       ├── core/
+│       │   └── intent_classifier.py     # OpenCV heuristics, zero RAM
+│       ├── text_conversion/
+│       │   ├── handwriting_recognizer.py  # HTTP client → HF Spaces
+│       │   └── text_styler.py             # Rules-based AI styling
+│       ├── sketch_enhancement/
+│       │   ├── sketch_enhancer.py         # Advanced OpenCV pipeline
+│       │   └── vectorizer.py              # Raster → Excalidraw JSON
+│       └── math_solving/
+│           └── math_solver.py             # Roboflow → Gemini → EasyOCR → SymPy
+├── main.py                                # FastAPI router, 5 dedicated endpoints
+└── requirements.txt                       # Lean — no torch/transformers on Render
+```
+
+---
+
+### API Endpoints
+
+| Endpoint | Trigger | Model Used |
+|---|---|---|
+| `POST /api/ml/enhance` | Auto Enhance button | Intent classifier → routes |
+| `POST /api/ml/math` | Math button | Roboflow → Gemini → EasyOCR → SymPy |
+| `POST /api/ml/text` | Text button | HF PaddleOCR-VL-1.5 |
+| `POST /api/ml/sketch` | Sketch button | Advanced OpenCV pipeline |
+| `POST /api/ml/detect` | Detect button | OpenCV heuristic classifier |
+
+---
+
+## 2. Feature: Mathematical Equation Solver ✅ DONE
+
+### Architecture — 4-Tier OCR Pipeline
+
+```
+Tier 0: Roboflow HTTP API   (serverless workflow, fastest, no local model)
+Tier 1: Gemini Vision       (multimodal LLM, best for messy handwriting)
+Tier 2: EasyOCR             (local CRNN, no internet required)
+Tier 3: OpenCV Contour      (symbol segmentation, last resort)
+         └─ SymPy           (symbolic math solver for all tiers)
+```
+
+Each tier attempts to read the equation. The first one that produces a string SymPy can parse wins. This makes the solver robust to a wide range of handwriting styles and network conditions.
+
+**Why Roboflow first:** The serverless workflow runs in milliseconds, uses zero local RAM, and is the most reliable for clean symbol detection.
+
+**Why Gemini second:** Handles ambiguous cursive math (e.g. "x" vs "×") better than any local model because it has world knowledge.
+
+**Why EasyOCR third:** Offline fallback. Works without any API keys.
+
+**Why Contour last:** Pure OpenCV, zero dependencies, handles extreme cases where OCR fails entirely.
+
+---
+
+## 3. Feature: Sketch Enhancement ✅ DONE (CV pipeline, GAN pending)
+
+### Current Implementation — Advanced OpenCV Pipeline
+
+Multi-stage pipeline applied to every sketch:
+1. **Upscale** — bicubic interpolation to ≥800px for better processing
+2. **Denoise** — non-local means + bilateral filter (edge-preserving)
+3. **Multi-scale edge detection** — three Canny passes combined
+4. **Morphological line connection** — closes broken strokes
+5. **Guided filter smoothing** — better than bilateral for stroke quality
+6. **CLAHE contrast + gamma correction** — improves visibility
+
+Four output styles: `professional`, `artistic`, `clean`, `minimal`.
+
+### Planned — Pix2Pix GAN
+
+Train a U-Net generator + PatchGAN discriminator on 50K synthetic pairs (clean SVG → corrupted → clean). Export to ONNX (~50 MB). Integrate via `onnxruntime` — no PyTorch needed at inference time.
+
+---
+
+## 4. Deployment
+
+| Service | Role | Cost | RAM |
+|---|---|---|---|
+| Render (free) | FastAPI router + math solver | $0 | ~120 MB |
+| Hugging Face Spaces (free) | PaddleOCR-VL-1.5 inference | $0 | ~2 GB |
+| Roboflow (free tier) | Math symbol detection | $0 | serverless |
+
+Total monthly infrastructure cost: **$0**.

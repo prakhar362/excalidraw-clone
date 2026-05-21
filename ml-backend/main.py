@@ -2,14 +2,14 @@ from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import io
-from PIL import Image, ImageOps
+from PIL import Image
 import traceback
-from typing import Optional, List
+from typing import Optional
 
 from app.models.core import IntentClassifier
 from app.models.sketch_enhancement import SketchEnhancer, Vectorizer
 from app.models.math_solving import MathSolver
-from app.models.text_conversion import HandwritingRecognizer, TextDetector, TextStyler
+from app.models.text_conversion import HandwritingRecognizer, TextStyler
 from app.config import config
 
 app = FastAPI(title="SketchCalibur ML API", version="2.0.0")
@@ -29,13 +29,12 @@ math_solver:            Optional[MathSolver]            = None
 handwriting_recognizer: Optional[HandwritingRecognizer] = None
 vectorizer:             Optional[Vectorizer]            = None
 text_styler:            Optional[TextStyler]            = None
-text_detector:          Optional[TextDetector]          = None
 
 
 @app.on_event("startup")
 async def load_models():
     global intent_classifier, sketch_enhancer, math_solver
-    global handwriting_recognizer, vectorizer, text_styler, text_detector
+    global handwriting_recognizer, vectorizer, text_styler
 
     print("Loading ML models...")
     intent_classifier      = IntentClassifier()
@@ -44,7 +43,6 @@ async def load_models():
     handwriting_recognizer = HandwritingRecognizer()
     math_solver            = MathSolver()
     text_styler            = TextStyler()
-    text_detector          = TextDetector()
     print("All models loaded successfully!")
 
 
@@ -160,38 +158,11 @@ async def _solve_math_image(image: Image.Image, intent_result: dict) -> JSONResp
     })
 
 
-# --- Utility Function: Prevents TrOCR infinite loops on whitespace ---
-def get_tight_crop(img: Image.Image, padding: int = 15) -> Image.Image:
-    """Removes excess whitespace/transparency to prevent TrOCR hallucinations."""
-    if img.mode in ('RGBA', 'LA') or (img.mode == 'P' and 'transparency' in img.info):
-        bg = Image.new("RGB", img.size, (255, 255, 255))
-        bg.paste(img, mask=img.convert('RGBA').split()[3])
-        img = bg
-    else:
-        img = img.convert('RGB')
-        
-    gray = img.convert('L')
-    # Threshold to ignore faint shadows, keep the ink
-    gray = gray.point(lambda p: 255 if p > 240 else p) 
-    inverted = ImageOps.invert(gray)
-    
-    bbox = inverted.getbbox()
-    if bbox:
-        x1, y1, x2, y2 = bbox
-        x1 = max(0, x1 - padding)
-        y1 = max(0, y1 - padding)
-        x2 = min(img.width, x2 + padding)
-        y2 = min(img.height, y2 + padding)
-        return img.crop((x1, y1, x2, y2))
-        
-    return img
-# ------------------------------------------------------------------
-
 @app.post("/api/ml/text")
 async def recognize_text(file: UploadFile = File(...)):
     """
     Clicked when user presses 'Text' button.
-    Runs EasyOCR (multi-region) → TrOCR fallback → AI styling.
+    Sends the full image directly to HuggingFace PaddleOCR-VL — no region splitting.
     """
     try:
         image = _read_image(await file.read())
@@ -200,108 +171,40 @@ async def recognize_text(file: UploadFile = File(...)):
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
+
 async def _recognize_text_image(image: Image.Image, intent_result: dict) -> JSONResponse:
     img_w, img_h = image.size
-    elements = []
 
-    # ── Detect regions with EasyOCR ────────────────────────────────────
-    regions = text_detector.detect_regions(image)
-    print("Regions detected response from EasyOCR: ", regions)
-    if not isinstance(regions, list):
-        print("Warning: Expected list of regions from detect_regions, got:", type(regions))
-        regions = []
-    if not regions:
-        print("No text regions detected by EasyOCR; falling back to full-image recognition.")
+    # ── Send full image to HuggingFace PaddleOCR-VL ───────────────────
+    # Region-splitting (EasyOCR) was removed: it caused words to be
+    # fragmented (e.g. "MIA" → "M" + "IA"). The HF microservice reads
+    # the whole canvas and returns the complete text accurately.
+    text = handwriting_recognizer.recognize(image)
 
-    if regions:
-        # Crop each region and run TrOCR on it
-        pad = 20
-        crops: List[Image.Image] = []
-        valid_regions = []
+    if not text:
+        return JSONResponse({
+            "success":     False,
+            "intent":      "handwriting",
+            "result_type": "text_error",
+            "elements":    [],
+            "message":     "Could not recognize any text. Try writing more clearly.",
+        })
 
-        for region in regions:
-            # ── Filter out low-confidence noise ───────────────────
-            confidence = region.get("confidence", 1.0)
-            if confidence < 0.10:  # Adjusted for EasyOCR's scoring scale
-                print(f"Skipping low confidence region: {confidence}")
-                continue
-            # ──────────────────────────────────────────────────────
-
-            bbox = region["bbox"]
-            x, y, w, h = bbox["x"], bbox["y"], bbox["width"], bbox["height"]
-            
-            x1 = max(0, x - pad)
-            y1 = max(0, y - pad)
-            x2 = min(img_w, x + w + pad)
-            y2 = min(img_h, y + h + pad)
-            
-            crop = image.crop((x1, y1, x2, y2))
-            
-            # Uncomment the line below to save crops to disk for visual debugging!
-            # crop.save(f"debug_crop_{region['id']}.png")
-            
-            if crop.width < 10 or crop.height < 10:
-                continue
-                
-            crops.append(crop)
-            valid_regions.append(region)
-
-        if crops:
-            # Batch-recognise all crops in one TrOCR call
-            texts = handwriting_recognizer.recognize_batch(crops)
-
-            for region, text in zip(valid_regions, texts):
-                if not text or text.startswith("Handwriting recognition"):
-                    continue
-                
-                bbox = region["bbox"]
-                x, y = bbox["x"], bbox["y"]
-                w, h = bbox["width"], bbox["height"]
-
-                style = text_styler.suggest_style(text, {
-                    "canvas_width": img_w, "canvas_height": img_h,
-                    "y": y, "region_height": h, "region_width": w,
-                })
-                
-                element = vectorizer.text_to_excalidraw_with_style(
-                    text=text, x=float(x), y=float(y), style=style,
-                )
-                element["detectionConfidence"] = region.get("confidence", 1.0)
-                elements.append(element)
-
-        if elements:
-            return JSONResponse({
-                "success":       True,
-                "intent":        "handwriting",
-                "confidence":    intent_result["confidence"],
-                "result_type":   "multi_text",
-                "regions_count": len(elements),
-                "elements":      elements,
-                "message":       f"Recognized {len(elements)} text region(s)",
-            })
-
-    # ── Fallback: TrOCR on full image ──────────────────────────────────
-    # If no regions were detected, fall back to reading the whole image.
-    # We MUST tight crop it first, or TrOCR hallucinates infinite loops on whitespace.
-    cropped_fallback = get_tight_crop(image)
-    
-    text = handwriting_recognizer.recognize(cropped_fallback)
-    
-    style = text_styler.suggest_style(text, {
+    # ── AI styling ────────────────────────────────────────────────────
+    style   = text_styler.suggest_style(text, {
         "canvas_width": img_w, "canvas_height": img_h, "y": 0,
     })
-    
     element = vectorizer.text_to_excalidraw_with_style(text=text, x=0, y=0, style=style)
 
     return JSONResponse({
         "success":     True,
         "intent":      "handwriting",
         "confidence":  intent_result["confidence"],
-        "result_type": "single_text",
+        "result_type": "recognized_text",
         "text":        text,
         "elements":    [element],
         "styling":     style,
-        "message":     f"Handwriting recognized via fallback!",
+        "message":     f"Recognized: \"{text}\"",
     })
 
 # ── 4. Sketch Enhancement  (dedicated) ───────────────────────────────────────
