@@ -14,4 +14,3 @@ numpy>=1.26.4
 requests
 google-generativeai
 easyocr
-pillow-simd==10.2.0; sys_platform != "win32"
