@@ -29,7 +29,7 @@ class VectorizerV2:
         
         Args:
             image: Enhanced sketch image
-            smooth: Apply spline smoothing to curves
+            smooth: Apply spline smoothing to curves (disabled by default to avoid distortion)
             min_area: Minimum contour area to keep (filters noise)
         
         Returns:
@@ -43,10 +43,10 @@ class VectorizerV2:
             img_array, 200, 255, cv2.THRESH_BINARY_INV
         )
         
-        # Find contours
-        contours, hierarchy = cv2.findContours(
+        # Find contours using RETR_EXTERNAL to get clean outer boundaries (avoids double outline bug)
+        contours, _ = cv2.findContours(
             binary,
-            cv2.RETR_TREE,
+            cv2.RETR_EXTERNAL,
             cv2.CHAIN_APPROX_SIMPLE
         )
         
@@ -58,8 +58,8 @@ class VectorizerV2:
             if area < min_area:
                 continue
             
-            # Simplify contour
-            epsilon = self.simplify_tolerance
+            # Simplify contour adaptively based on arc length (preserves detail of small & large curves perfectly)
+            epsilon = 0.008 * cv2.arcLength(contour, True)
             approx = cv2.approxPolyDP(contour, epsilon, True)
             
             # Extract points
@@ -69,15 +69,8 @@ class VectorizerV2:
             if len(points) < 2:
                 continue
             
-            # Apply smoothing
-            if smooth and len(points) >= 4:
-                points = self._smooth_curve(points)
-            
-            # Determine if closed shape
-            is_closed = self._is_closed_shape(contour, points)
-            
-            # Create Excalidraw element
-            element = self._create_element(points, i, is_closed, hierarchy, i)
+            # Create Excalidraw element (always draw as organic curves to avoid sterile geometric shapes)
+            element = self._create_element(points, i, False, None, i)
             
             if element:
                 elements.append(element)

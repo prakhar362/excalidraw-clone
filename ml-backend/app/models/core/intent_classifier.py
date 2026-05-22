@@ -66,11 +66,21 @@ class IntentClassifier:
     
     def _detect_math_symbols(self, image: np.ndarray) -> bool:
         """Detect presence of mathematical symbols"""
-        # Simple heuristic: look for horizontal lines (= sign, fraction bars)
+        # Math equations always consist of multiple symbols (digits, operators, variables)
+        # Check that we have at least 3 distinct contours in the image.
+        # If there are 1 or 2 contours, it's highly likely to be a simple sketch (e.g. apple, shape), not math.
+        _, binary = cv2.threshold(image, 127, 255, cv2.THRESH_BINARY_INV)
+        contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if len(contours) < 3:
+            return False
+            
+        # Detect horizontal lines (= sign, fraction bars)
         edges = cv2.Canny(image, 50, 150)
         horizontal_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (25, 1))
         detect_horizontal = cv2.morphologyEx(edges, cv2.MORPH_OPEN, horizontal_kernel)
-        return np.sum(detect_horizontal) > 1000
+        
+        # Increase threshold to require robust horizontal components (at least ~60px total length of horizontal strokes)
+        return np.sum(detect_horizontal) > 15000
     
     def _calculate_text_density(self, image: np.ndarray) -> float:
         """Calculate how text-like the image is"""
