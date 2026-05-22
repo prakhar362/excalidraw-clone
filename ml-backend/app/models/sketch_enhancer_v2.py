@@ -90,7 +90,7 @@ class SketchEnhancerV2:
         Args:
             image: Input sketch image
             style: Enhancement style
-            use_ai: Try AI enhancement (requires ControlNet)
+            use_ai: Try AI enhancement (uses Gemini if key present, else ControlNet)
         
         Returns:
             Dict with:
@@ -98,14 +98,26 @@ class SketchEnhancerV2:
                 - style: Applied style
                 - method: Enhancement method used
                 - confidence: Quality confidence (0-1)
+                - elements: (Optional) List of beautified Excalidraw elements
         """
         
         print(f"Enhancing sketch: style={style}, use_ai={use_ai}")
         
+        # Try cloud-powered Gemini AI first if requested and key is present
+        if use_ai and config.GEMINI_API_KEY:
+            try:
+                print("Attempting cloud-powered Gemini AI sketch enhancement...")
+                return self._enhance_with_gemini(image, style)
+            except Exception as e:
+                import traceback
+                print(f"Gemini AI sketch enhancement failed: {e}")
+                print(traceback.format_exc())
+                print("Falling back to preprocessed pipeline...")
+        
         # Preprocess image
         preprocessed = self.preprocessor.preprocess(image)
         
-        # Try AI enhancement if requested and available
+        # Try ControlNet AI enhancement if requested and available
         if use_ai and self.controlnet_ready:
             try:
                 enhanced = self._enhance_with_controlnet(preprocessed, style)
@@ -129,6 +141,210 @@ class SketchEnhancerV2:
             "method": "opencv",
             "confidence": 0.85
         }
+
+    def _enhance_with_gemini(
+        self,
+        image: Image.Image,
+        style: EnhancementStyle
+    ) -> Dict:
+        """
+        Enhance sketch using Gemini 2.5 Flash to generate beautified Excalidraw JSON elements directly.
+        """
+        import google.generativeai as genai
+        import json
+        
+        api_key = config.GEMINI_API_KEY
+        if not api_key:
+            raise ValueError("GEMINI_API_KEY config not set")
+            
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel("gemini-2.5-flash")
+        
+        # Save image to base64 PNG
+        buffered = io.BytesIO()
+        image.save(buffered, format="PNG")
+        img_b64 = base64.b64encode(buffered.getvalue()).decode()
+        
+        width, height = image.size
+        
+        prompt = f"""
+You are an expert AI sketch vectorizer, refiner, and beautifier.
+Analyze the user's rough sketch image (resolution: {width}x{height} pixels).
+Your task is to return a clean, premium, perfectly vectorized and beautified representation of this sketch in Excalidraw JSON format.
+
+Beautification Rules (Apply to the Style: '{style}'):
+1. Straighten lines that are meant to be straight (e.g. grids, charts, rectangles, connectors).
+2. Detect standard shapes (like rectangles, circles/ellipses) and represent them as precise, clean Excalidraw elements.
+3. For hand-drawn or organic shapes (like an apple, a smiley, a cloud, etc.), represent them as 'line' elements, but smooth out the jagged/shaky lines. Simplify the points for a clean hand-drawn look.
+4. Scale and position the elements perfectly to match the original layout and bounding box in the input image. Ensure coordinates fall within the bounds [0, 0] to [{width}, {height}].
+5. Style configuration based on style '{style}':
+   - 'professional': Clean, formal diagram. Use roughness=0, strokeColor="#1e1e1e", strokeWidth=2.
+   - 'artistic': Aesthetic hand-drawn style. Use roughness=1, strokeColor="#1e1e1e", strokeWidth=2.
+   - 'clean': Pure minimal clean style. Use roughness=0, strokeColor="#2b6cb0", strokeWidth=2.5.
+   - 'minimal': Extremely simple, fine line drawing. Use roughness=0, strokeColor="#4a5568", strokeWidth=1.5.
+
+Supported Excalidraw Element Structures:
+- For Rectangles:
+{{
+  "id": "rect_unique_id",
+  "type": "rectangle",
+  "x": number,
+  "y": number,
+  "width": number,
+  "height": number,
+  "angle": 0,
+  "strokeColor": string,
+  "backgroundColor": "transparent",
+  "fillStyle": "solid",
+  "strokeWidth": number,
+  "strokeStyle": "solid",
+  "roughness": number,
+  "opacity": 100,
+  "seed": 42,
+  "version": 1
+}}
+- For Ellipses (Circles/Ovals):
+{{
+  "id": "ellipse_unique_id",
+  "type": "ellipse",
+  "x": number,
+  "y": number,
+  "width": number,
+  "height": number,
+  "angle": 0,
+  "strokeColor": string,
+  "backgroundColor": "transparent",
+  "fillStyle": "solid",
+  "strokeWidth": number,
+  "strokeStyle": "solid",
+  "roughness": number,
+  "opacity": 100,
+  "seed": 42,
+  "version": 1
+}}
+- For Lines/Curves:
+{{
+  "id": "line_unique_id",
+  "type": "line",
+  "x": number, (must be the minimum x-coordinate of the line's bounding box)
+  "y": number, (must be the minimum y-coordinate of the line's bounding box)
+  "width": number,
+  "height": number,
+  "points": [[offset_x, offset_y], ...], (points MUST be offsets relative to [0,0] starting at the first point's offset, e.g. points[0] is typically [0, 0])
+  "angle": 0,
+  "strokeColor": string,
+  "backgroundColor": "transparent",
+  "fillStyle": "solid",
+  "strokeWidth": number,
+  "strokeStyle": "solid",
+  "roughness": number,
+  "opacity": 100,
+  "seed": 42,
+  "version": 1
+}}
+
+Ensure all points in 'points' for line elements are relative offsets starting from [0, 0] (i.e. points[i] = [px - x, py - y]), and that 'x' and 'y' represent the absolute top-left of the line element on the canvas.
+
+Output format:
+Return ONLY a valid JSON array of Excalidraw elements. Do NOT wrap it in markdown code blocks or add any explanations.
+Output the JSON array now:
+"""
+
+        response = model.generate_content([
+            prompt,
+            {"mime_type": "image/png", "data": img_b64},
+        ])
+        
+        raw = response.text.strip()
+        
+        # Clean JSON markdown if model wrapped it
+        if raw.startswith("```json"):
+            raw = raw[7:]
+        elif raw.startswith("```"):
+            raw = raw[3:]
+        if raw.endswith("```"):
+            raw = raw[:-3]
+        raw = raw.strip()
+        
+        try:
+            elements = json.loads(raw)
+            if not isinstance(elements, list):
+                raise ValueError("Response is not a JSON list")
+        except Exception as e:
+            print(f"Gemini output parsing failed: {e}. Raw output: {raw}")
+            raise ValueError(f"Invalid JSON returned from Gemini: {str(e)}")
+            
+        # Re-render elements into preview image
+        rendered_image = self._render_elements_to_preview_image(elements, width, height)
+        
+        return {
+            "enhanced_image": rendered_image,
+            "elements": elements,
+            "style": style,
+            "method": "gemini-ai",
+            "confidence": 0.98
+        }
+
+    def _render_elements_to_preview_image(
+        self,
+        elements: list,
+        width: int,
+        height: int
+    ) -> Image.Image:
+        """
+        Render a list of Excalidraw elements to a raster PIL Image for preview
+        """
+        from PIL import ImageDraw
+        
+        # Create a blank white image
+        img = Image.new("RGB", (width, height), "white")
+        draw = ImageDraw.Draw(img)
+        
+        for el in elements:
+            try:
+                el_type = el.get("type")
+                x = float(el.get("x", 0))
+                y = float(el.get("y", 0))
+                w = float(el.get("width", 0))
+                h = float(el.get("height", 0))
+                
+                # Colors
+                stroke_color = el.get("strokeColor", "#1e1e1e")
+                stroke_width = max(1, int(float(el.get("strokeWidth", 2))))
+                
+                if el_type == "rectangle":
+                    # Draw a rectangle
+                    draw.rectangle(
+                        [x, y, x + w, y + h],
+                        outline=stroke_color,
+                        width=stroke_width
+                    )
+                elif el_type == "ellipse":
+                    # Draw an ellipse
+                    draw.ellipse(
+                        [x, y, x + w, y + h],
+                        outline=stroke_color,
+                        width=stroke_width
+                    )
+                elif el_type == "line":
+                    points = el.get("points", [])
+                    if len(points) >= 2:
+                        # Reconstruct absolute coordinate points
+                        abs_points = [
+                            (x + float(p[0]), y + float(p[1]))
+                            for p in points
+                        ]
+                        # Draw line segments
+                        for j in range(len(abs_points) - 1):
+                            draw.line(
+                                [abs_points[j], abs_points[j+1]],
+                                fill=stroke_color,
+                                width=stroke_width
+                            )
+            except Exception as e:
+                print(f"Error rendering element {el}: {e}")
+                
+        return img
     
     def _enhance_with_controlnet(
         self, 

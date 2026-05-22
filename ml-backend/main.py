@@ -422,11 +422,14 @@ async def enhance_sketch_v2_endpoint(
         
         # Convert to vectors if requested
         if return_vectors:
-            elements = vectorizer_v2.image_to_excalidraw(
-                enhanced_image,
-                smooth=True,
-                min_area=50.0
-            )
+            if "elements" in result and result["elements"] is not None:
+                elements = result["elements"]
+            else:
+                elements = vectorizer_v2.image_to_excalidraw(
+                    enhanced_image,
+                    smooth=True,
+                    min_area=50.0
+                )
             response_data["elements"] = elements
             response_data["element_count"] = len(elements)
             response_data["message"] = (
@@ -514,7 +517,7 @@ async def get_enhancement_info():
     return JSONResponse({
         "opencv_available": sketch_enhancer_v2.opencv_ready,
         "controlnet_available": sketch_enhancer_v2.controlnet_ready,
-        "ai_enhancement_enabled": config.ENABLE_AI_ENHANCEMENT,
+        "ai_enhancement_enabled": bool(config.GEMINI_API_KEY) or config.ENABLE_AI_ENHANCEMENT,
         "styles": ["professional", "artistic", "clean", "minimal"],
         "default_style": "professional",
         "max_image_size": config.SKETCH_MAX_SIZE,

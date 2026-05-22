@@ -34,7 +34,11 @@ export const EnhancementPreview: React.FC<EnhancementPreviewProps> = ({
   useEffect(() => {
     sketchEnhancementService.getEnhancementInfo()
       .then(info => {
-        setAiAvailable(info.controlnet_available || info.ai_enhancement_enabled);
+        const available = !!(info.controlnet_available || info.ai_enhancement_enabled);
+        setAiAvailable(available);
+        if (available) {
+          setUseAI(true);
+        }
       })
       .catch(err => {
         console.error('Error fetching enhancement capabilities:', err);
@@ -223,13 +227,13 @@ export const EnhancementPreview: React.FC<EnhancementPreviewProps> = ({
               disabled={loading} 
             />
 
-            {/* AI ControlNet Toggle */}
+            {/* AI Sketch Beautifier Toggle */}
             {aiAvailable && (
               <div className="border border-slate-100 bg-slate-50/50 rounded-2xl p-4">
                 <div className="flex items-center justify-between mb-1.5">
                   <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                     <Sparkles className="h-3.5 w-3.5 text-purple-500" />
-                    AI ControlNet Mode
+                    AI Sketch Beautifier
                   </span>
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input 
@@ -243,7 +247,7 @@ export const EnhancementPreview: React.FC<EnhancementPreviewProps> = ({
                   </label>
                 </div>
                 <p className="text-[10px] text-slate-500 leading-normal">
-                  Uses Stable Diffusion ControlNet to transform strokes into beautiful artwork. (May take longer on CPU).
+                  Uses cloud-powered AI to transform rough strokes into beautiful, clean, perfectly aligned shapes and curves.
                 </p>
               </div>
             )}

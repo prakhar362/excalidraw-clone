@@ -19,7 +19,23 @@ export class CanvasUtils {
       throw new Error('No elements selected');
     }
     
-    // Calculate bounding box
+    try {
+      // Use official high-fidelity Excalidraw export to image utility
+      const { exportToBlob } = await import('@excalidraw/excalidraw');
+      const blob = await exportToBlob({
+        elements: selectedElements,
+        mimeType: 'image/png',
+        appState: {
+          exportBackground: true,
+          exportWithDarkMode: false
+        }
+      });
+      if (blob) return blob;
+    } catch (err) {
+      console.warn('Failed to export using @excalidraw/excalidraw exportToBlob. Falling back to manual rendering.', err);
+    }
+    
+    // Fallback: Calculate bounding box and draw manually
     const bounds = this.calculateBounds(selectedElements);
     
     // Create temporary canvas
