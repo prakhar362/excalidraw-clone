@@ -10,7 +10,7 @@ diffusers==0.25.0
 transformers==4.37.0
 accelerate==0.26.1
 Pillow
-numpy
+numpy==1.26.4
 requests
 google-generativeai
 easyocr
