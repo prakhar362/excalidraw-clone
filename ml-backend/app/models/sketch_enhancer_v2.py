@@ -198,185 +198,145 @@ class SketchEnhancerV2:
         Advanced OpenCV enhancement pipeline
         
         Pipeline stages:
-        1. Multi-scale edge detection
-        2. Morphological line connection
-        3. Style-specific processing
-        4. Post-processing (gamma, sharpening)
+        1. Adaptive solid stroke extraction (avoids Canny double-edges)
+        2. Style-specific processing
+        3. Post-processing (gamma, sharpening)
         """
         
         print("Running OpenCV enhancement pipeline...")
         
-        # Stage 1: Multi-scale edge detection
-        edges = self._detect_edges_multiscale(img)
+        # Stage 1: Extract clean solid strokes
+        strokes = self._extract_solid_strokes(img)
         
-        # Stage 2: Connect broken strokes
-        edges = self._connect_strokes(edges)
-        
-        # Stage 3: Apply style-specific processing
+        # Stage 2: Apply style-specific processing
         if style == "professional":
-            result = self._apply_professional_style(img, edges)
+            result = self._apply_professional_style(img, strokes)
         elif style == "artistic":
-            result = self._apply_artistic_style(img, edges)
+            result = self._apply_artistic_style(img, strokes)
         elif style == "clean":
-            result = self._apply_clean_style(img, edges)
+            result = self._apply_clean_style(img, strokes)
         elif style == "minimal":
-            result = self._apply_minimal_style(img, edges)
+            result = self._apply_minimal_style(img, strokes)
         else:
-            result = self._apply_professional_style(img, edges)
+            result = self._apply_professional_style(img, strokes)
         
-        # Stage 4: Post-processing
+        # Stage 3: Post-processing
         result = self._post_process(result, style)
         
         print("[OK] OpenCV enhancement complete")
         
         return result
     
-    def _detect_edges_multiscale(self, img: np.ndarray) -> np.ndarray:
+    def _extract_solid_strokes(self, img: np.ndarray) -> np.ndarray:
         """
-        Multi-scale edge detection - combines three Canny passes
-        Captures both strong and subtle edges
+        Extract solid strokes from drawing using adaptive thresholding
+        This completely avoids the double-edge outlines caused by Canny.
         """
         gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
         
-        # Three scales with different thresholds
-        edges_fine = cv2.Canny(gray, 30, 100)    # Captures subtle details
-        edges_mid = cv2.Canny(gray, 50, 150)     # Main strokes
-        edges_strong = cv2.Canny(gray, 70, 200)  # Strong features only
+        # Bilateral filter removes paper texture noise while preserving sharp stroke boundaries
+        smoothed = cv2.bilateralFilter(gray, 9, 75, 75)
         
-        # Weighted combination (prioritize main strokes)
-        edges = np.maximum(
-            edges_strong,
-            np.maximum(edges_mid * 0.7, edges_fine * 0.4)
-        ).astype(np.uint8)
+        # Adaptive threshold extracts local dark drawing strokes on light background
+        thresh = cv2.adaptiveThreshold(
+            smoothed,
+            255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY_INV,
+            15,  # local window size
+            8    # constant offset
+        )
         
-        return edges
-    
-    def _connect_strokes(self, edges: np.ndarray) -> np.ndarray:
-        """
-        Connect broken strokes using morphological operations
-        """
-        # Dilation to connect nearby edges
-        kernel_connect = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-        connected = cv2.dilate(edges, kernel_connect, iterations=1)
+        # Clean small isolated noise specks
+        kernel_clean = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+        cleaned = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel_clean)
         
-        # Thinning to restore line width
-        kernel_thin = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2, 2))
-        connected = cv2.erode(connected, kernel_thin, iterations=1)
+        # Connect nearby stroke gaps
+        kernel_smooth = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        smoothed_strokes = cv2.morphologyEx(cleaned, cv2.MORPH_CLOSE, kernel_smooth)
         
-        # Remove small isolated noise
-        kernel_denoise = np.ones((2, 2), np.uint8)
-        connected = cv2.morphologyEx(connected, cv2.MORPH_OPEN, kernel_denoise)
-        
-        return connected
+        return smoothed_strokes
     
     def _apply_professional_style(
         self, 
         img: np.ndarray, 
-        edges: np.ndarray
+        strokes: np.ndarray
     ) -> np.ndarray:
         """
         Professional technical drawing style
         - Clean white background
-        - Pure black lines
-        - Slight anti-aliasing
+        - Solid, clean, anti-aliased black strokes
         """
-        # Create white background
         result = np.ones_like(img) * 255
         
-        # Apply edges in pure black
-        result[edges > 0] = [0, 0, 0]
+        # Create premium anti-aliased borders
+        mask = cv2.GaussianBlur(strokes, (3, 3), 0.5)
         
-        # Slight Gaussian blur for anti-aliasing
-        result = cv2.GaussianBlur(result, (3, 3), 0.5)
-        
+        # Apply anti-aliased black strokes
+        for c in range(3):
+            result[:, :, c] = 255 - mask
+            
         return result
     
     def _apply_artistic_style(
         self, 
         img: np.ndarray, 
-        edges: np.ndarray
+        strokes: np.ndarray
     ) -> np.ndarray:
         """
         Artistic pencil sketch style
-        - Dodge blend technique
-        - Textured appearance
-        - Maintains some grayscale variation
+        - Retains beautiful textured pencil graphite details
+        - Completely purifies the paper background to clean white
         """
         gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
         
-        # Invert grayscale
-        inv = 255 - gray
-        
-        # Blur inverted image
-        blur = cv2.GaussianBlur(inv, (21, 21), 0)
-        
-        # Dodge blend (divide)
+        # Bleach background to white using a dodge blend
+        inv_gray = 255 - gray
+        blur = cv2.GaussianBlur(inv_gray, (21, 21), 0)
         sketch = cv2.divide(gray, 255 - blur, scale=256)
         
-        # Overlay edges for definition
-        sketch[edges > 127] = 0
+        # Enhance strokes specifically with the solid mask for clean outline contrast
+        enhanced_sketch = cv2.multiply(sketch, 255 - (strokes // 3), scale=1.0/255)
         
-        # Convert back to RGB
-        result = cv2.cvtColor(sketch, cv2.COLOR_GRAY2RGB)
-        
+        result = cv2.cvtColor(enhanced_sketch.astype(np.uint8), cv2.COLOR_GRAY2RGB)
         return result
     
     def _apply_clean_style(
         self, 
         img: np.ndarray, 
-        edges: np.ndarray
+        strokes: np.ndarray
     ) -> np.ndarray:
         """
         Clean minimal style
-        - High contrast binary
-        - No grayscale variation
-        - Sharp clean lines
+        - Sharp, high-contrast, pure solid black lines
         """
-        gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-        
-        # Adaptive threshold for uneven lighting
-        binary = cv2.adaptiveThreshold(
-            gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-            cv2.THRESH_BINARY, 11, 2
-        )
-        
-        # Combine with edges
-        binary[edges > 0] = 0
-        
-        # Noise removal
-        kernel = np.ones((2, 2), np.uint8)
-        cleaned = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
-        
-        # Convert to RGB
-        result = cv2.cvtColor(cleaned, cv2.COLOR_GRAY2RGB)
-        
+        result = np.ones_like(img) * 255
+        result[strokes > 0] = [0, 0, 0]
         return result
     
     def _apply_minimal_style(
         self, 
         img: np.ndarray, 
-        edges: np.ndarray
+        strokes: np.ndarray
     ) -> np.ndarray:
         """
-        Ultra-minimal line drawing
-        - Only strongest edges
-        - Thin lines
-        - Maximum simplicity
+        Ultra-minimal thin line drawing
+        - Elegantly thinned strokes
+        - Fine, high-quality contours
         """
-        gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+        # Erode the stroke mask to uniform thin centerlines
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+        thinned = cv2.erode(strokes, kernel, iterations=1)
         
-        # Only keep strongest edges
-        strong_edges = cv2.Canny(gray, 100, 200)
+        # Anti-alias the fine strokes
+        mask = cv2.GaussianBlur(thinned, (3, 3), 0.5)
         
-        # Thin lines
-        kernel = np.ones((2, 2), np.uint8)
-        thinned = cv2.erode(strong_edges, kernel, iterations=1)
-        
-        # White background
         result = np.ones_like(img) * 255
-        result[thinned > 0] = [0, 0, 0]
-        
+        for c in range(3):
+            result[:, :, c] = 255 - mask
+            
         return result
+
     
     def _post_process(
         self, 
