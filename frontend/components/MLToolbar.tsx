@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { mlService } from '@/lib/mlService';
 import { Loader2, Sparkles, Brain, Calculator, Type, Image as ImageIcon, X, CheckCircle2 } from 'lucide-react';
 import { toast } from 'react-toastify';
+import { EnhancementPreview } from './EnhancementPreview';
 
 interface MLToolbarProps {
   excalidrawAPI: any;
@@ -63,6 +64,10 @@ export const MLToolbar: React.FC<MLToolbarProps> = ({ excalidrawAPI }) => {
   const [statusMsg,  setStatusMsg]  = useState<string>('');
   const [isHealthy,  setIsHealthy]  = useState(false);
   const [mathResult, setMathResult] = useState<MathResult | null>(null);
+  
+  // Sketch enhancement modal states
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   useEffect(() => {
     mlService.checkHealth().then(setIsHealthy);
@@ -179,15 +184,16 @@ export const MLToolbar: React.FC<MLToolbarProps> = ({ excalidrawAPI }) => {
     '🔥 Waking up AI… may take ~2 min on first use',
   );
 
-  // Sketch → /api/ml/sketch
-  const handleSketch = () => run('sketch', mlService.enhanceSketch.bind(mlService), async (result) => {
-    const sel = excalidrawAPI.getSceneElements().filter((el: any) =>
-      getSelectedIds(excalidrawAPI).includes(el.id));
-    const ox = sel.length ? Math.min(...sel.map((e: any) => e.x)) + 60 : 0;
-    const oy = sel.length ? Math.min(...sel.map((e: any) => e.y)) + 60 : 0;
-    await addElementsToCanvas(excalidrawAPI, result.elements, ox, oy);
-    toast.success('🎨 Sketch enhanced!');
-  });
+  // Sketch → open advanced enhancement preview modal
+  const handleSketch = () => {
+    const ids = getSelectedIds(excalidrawAPI);
+    if (ids.length === 0) {
+      toast.error('Select elements first');
+      return;
+    }
+    setSelectedIds(ids);
+    setPreviewOpen(true);
+  };
 
   // Detect → /api/ml/detect  (fast — pure OpenCV heuristics, no HF call)
   const handleDetect = () => run(
@@ -325,6 +331,14 @@ export const MLToolbar: React.FC<MLToolbarProps> = ({ excalidrawAPI }) => {
           </div>
         </div>
       )}
+
+      {/* Advanced Sketch Enhancement Studio Modal */}
+      <EnhancementPreview 
+        isOpen={previewOpen} 
+        onClose={() => setPreviewOpen(false)} 
+        excalidrawAPI={excalidrawAPI}
+        selectedIds={selectedIds}
+      />
     </>
   );
 };

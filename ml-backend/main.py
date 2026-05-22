@@ -4,10 +4,12 @@ from fastapi.responses import JSONResponse
 import io
 from PIL import Image
 import traceback
-from typing import Optional
+from typing import Optional, List
 
 from app.models.core import IntentClassifier
 from app.models.sketch_enhancement import SketchEnhancer, Vectorizer
+from app.models.sketch_enhancer_v2 import SketchEnhancerV2, EnhancementStyle
+from app.models.vectorizer_v2 import VectorizerV2
 from app.models.math_solving import MathSolver
 from app.models.text_conversion import HandwritingRecognizer, TextStyler
 from app.config import config
@@ -25,21 +27,25 @@ app.add_middleware(
 # ── Singletons ────────────────────────────────────────────────────────────────
 intent_classifier:      Optional[IntentClassifier]      = None
 sketch_enhancer:        Optional[SketchEnhancer]        = None
+sketch_enhancer_v2:     Optional[SketchEnhancerV2]      = None
 math_solver:            Optional[MathSolver]            = None
 handwriting_recognizer: Optional[HandwritingRecognizer] = None
 vectorizer:             Optional[Vectorizer]            = None
+vectorizer_v2:          Optional[VectorizerV2]          = None
 text_styler:            Optional[TextStyler]            = None
 
 
 @app.on_event("startup")
 async def load_models():
-    global intent_classifier, sketch_enhancer, math_solver
-    global handwriting_recognizer, vectorizer, text_styler
+    global intent_classifier, sketch_enhancer, sketch_enhancer_v2, math_solver
+    global handwriting_recognizer, vectorizer, vectorizer_v2, text_styler
 
     print("Loading ML models...")
     intent_classifier      = IntentClassifier()
     sketch_enhancer        = SketchEnhancer()
+    sketch_enhancer_v2     = SketchEnhancerV2()
     vectorizer             = Vectorizer()
+    vectorizer_v2          = VectorizerV2()
     handwriting_recognizer = HandwritingRecognizer()
     math_solver            = MathSolver()
     text_styler            = TextStyler()
@@ -61,13 +67,13 @@ async def _warmup_hf():
     import requests as _req
 
     hf_root = handwriting_recognizer.HF_API_URL.replace("/predict", "/")
-    print(f"🔥 Warming up HuggingFace Space: {hf_root}")
+    print(f"[WARMUP] Warming up HuggingFace Space: {hf_root}")
 
     for attempt in range(1, 4):          # up to 3 pings, 30s apart
         try:
             resp = _req.get(hf_root, timeout=60)
             if resp.status_code < 500:
-                print(f"✅ HuggingFace Space is warm (status {resp.status_code})")
+                print(f"[OK] HuggingFace Space is warm (status {resp.status_code})")
                 return
             print(f"   Ping {attempt}: status {resp.status_code}, retrying…")
         except Exception as e:
@@ -75,7 +81,7 @@ async def _warmup_hf():
 
         await asyncio.sleep(30)
 
-    print("⚠️  HuggingFace Space did not respond to warm-up pings — "
+    print("[WARN] HuggingFace Space did not respond to warm-up pings — "
           "first text request may be slow.")
 
 
@@ -337,6 +343,188 @@ async def process_sketch(
     except Exception as e:
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
+
+# ===== SKETCH ENHANCEMENT ENDPOINTS =====
+
+@app.post("/api/ml/enhance-sketch")
+async def enhance_sketch_v2_endpoint(
+    file: UploadFile = File(...),
+    style: EnhancementStyle = Form("professional"),
+    use_ai: bool = Form(False),
+    return_vectors: bool = Form(True),
+    return_preview: bool = Form(True)
+):
+    """
+    Enhance a rough sketch to professional quality
+    
+    Request:
+        - file: Image file (PNG, JPEG)
+        - style: Enhancement style (professional/artistic/clean/minimal)
+        - use_ai: Use AI enhancement if available (slower, better quality)
+        - return_vectors: Return Excalidraw vector elements
+        - return_preview: Return base64 preview image
+    
+    Response:
+        {
+            "success": true,
+            "style": "professional",
+            "method": "opencv" | "controlnet",
+            "confidence": 0.85,
+            "preview": "data:image/jpeg;base64,...",  # if return_preview
+            "elements": [...],                          # if return_vectors
+            "message": "Sketch enhanced successfully"
+        }
+    """
+    try:
+        # Read and validate image
+        contents = await file.read()
+        
+        try:
+            image = Image.open(io.BytesIO(contents))
+        except Exception as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid image file: {str(e)}"
+            )
+        
+        # Convert to RGB
+        if image.mode not in ['RGB', 'RGBA']:
+            image = image.convert('RGB')
+        elif image.mode == 'RGBA':
+            # Handle transparency
+            background = Image.new('RGB', image.size, (255, 255, 255))
+            background.paste(image, mask=image.split()[3])
+            image = background
+        
+        print(f"Enhancing sketch: {image.size}, style={style}, use_ai={use_ai}")
+        
+        # Enhance the sketch
+        result = sketch_enhancer_v2.enhance(
+            image,
+            style=style,
+            use_ai=use_ai
+        )
+        
+        enhanced_image = result["enhanced_image"]
+        
+        # Build response
+        response_data = {
+            "success": True,
+            "style": result["style"],
+            "method": result["method"],
+            "confidence": result["confidence"],
+        }
+        
+        # Add preview if requested
+        if return_preview:
+            preview_base64 = sketch_enhancer_v2.image_to_base64(enhanced_image)
+            response_data["preview"] = preview_base64
+        
+        # Convert to vectors if requested
+        if return_vectors:
+            elements = vectorizer_v2.image_to_excalidraw(
+                enhanced_image,
+                smooth=True,
+                min_area=50.0
+            )
+            response_data["elements"] = elements
+            response_data["element_count"] = len(elements)
+            response_data["message"] = (
+                f"Sketch enhanced using {result['method']} "
+                f"with {len(elements)} vector elements"
+            )
+        else:
+            response_data["message"] = f"Sketch enhanced using {result['method']}"
+        
+        return JSONResponse(response_data)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Enhancement error: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Enhancement failed: {str(e)}"
+        )
+
+@app.post("/api/ml/enhance-sketch-batch")
+async def enhance_sketch_batch(
+    files: List[UploadFile] = File(...),
+    style: EnhancementStyle = Form("professional"),
+    use_ai: bool = Form(False)
+):
+    """
+    Enhance multiple sketches in batch
+    
+    Useful for processing entire diagrams with multiple elements
+    """
+    if len(files) > 10:
+        raise HTTPException(
+            status_code=400,
+            detail="Maximum 10 files per batch request"
+        )
+    
+    results = []
+    
+    for i, file in enumerate(files):
+        try:
+            print(f"Processing file {i+1}/{len(files)}: {file.filename}")
+            
+            contents = await file.read()
+            image = Image.open(io.BytesIO(contents)).convert('RGB')
+            
+            # Enhance
+            result = sketch_enhancer_v2.enhance(image, style=style, use_ai=use_ai)
+            enhanced_image = result["enhanced_image"]
+            
+            # Vectorize
+            elements = vectorizer_v2.image_to_excalidraw(enhanced_image)
+            
+            results.append({
+                "filename": file.filename,
+                "success": True,
+                "method": result["method"],
+                "element_count": len(elements),
+                "elements": elements
+            })
+            
+        except Exception as e:
+            print(f"Failed to process {file.filename}: {e}")
+            results.append({
+                "filename": file.filename,
+                "success": False,
+                "error": str(e)
+            })
+    
+    successful = sum(1 for r in results if r["success"])
+    
+    return JSONResponse({
+        "success": True,
+        "total": len(files),
+        "successful": successful,
+        "failed": len(files) - successful,
+        "results": results
+    })
+
+@app.get("/api/ml/enhancement-info")
+async def get_enhancement_info():
+    """
+    Get information about available enhancement methods
+    """
+    return JSONResponse({
+        "opencv_available": sketch_enhancer_v2.opencv_ready,
+        "controlnet_available": sketch_enhancer_v2.controlnet_ready,
+        "ai_enhancement_enabled": config.ENABLE_AI_ENHANCEMENT,
+        "styles": ["professional", "artistic", "clean", "minimal"],
+        "default_style": "professional",
+        "max_image_size": config.SKETCH_MAX_SIZE,
+        "recommended_use": {
+            "professional": "Technical drawings, diagrams, architecture",
+            "artistic": "Hand-drawn illustrations, creative sketches",
+            "clean": "Minimal clean lines, simple diagrams",
+            "minimal": "Ultra-simple line drawings"
+        }
+    })
 
 
 if __name__ == "__main__":

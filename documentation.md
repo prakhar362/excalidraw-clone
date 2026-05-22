@@ -170,7 +170,7 @@ Each tier attempts to read the equation. The first one that produces a string Sy
 
 ---
 
-## 3. Feature: Sketch Enhancement ✅ DONE (CV pipeline, GAN pending)
+## 3. Feature: Sketch Enhancement  (CV pipeline done, GAN pending)
 
 ### Current Implementation — Advanced OpenCV Pipeline
 

@@ -3,9 +3,15 @@ uvicorn[standard]
 python-multipart
 python-dotenv
 sympy
-opencv-python-headless
+opencv-python-headless==4.9.0.80
+scikit-image==0.22.0
+scipy==1.11.4
+diffusers==0.25.0
+transformers==4.37.0
+accelerate==0.26.1
 Pillow
 numpy
 requests
 google-generativeai
 easyocr
+pillow-simd==10.2.0; sys_platform != "win32"
