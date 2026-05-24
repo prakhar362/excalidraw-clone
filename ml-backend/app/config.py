@@ -49,6 +49,13 @@ class Config:
     CONTROLNET_MODEL = "lllyasviel/control_v11p_sd15_scribble"
     CONTROLNET_INFERENCE_STEPS = 20  # Lower = faster, higher = better quality
     CONTROLNET_SCALE = 0.8          # Control strength (0.0-1.0)
+
+    # ===== ONNX ML SKETCH ENHANCEMENT (Informative Drawings) =====
+    # Auto-downloaded from HuggingFace at startup (~17 MB)
+    GAN_MODEL_DIR = str(BASE_DIR / "checkpoints")
+    GAN_MODEL_VARIANT = os.getenv("GAN_MODEL_VARIANT", "contour")  # "contour" | "opensketch"
+    # Set to "false" to force-disable even if onnxruntime is installed
+    GAN_ENABLED = os.getenv("GAN_ENABLED", "true").lower() != "false"
     
     # Caching
     SKETCH_CACHE_ENABLED = True

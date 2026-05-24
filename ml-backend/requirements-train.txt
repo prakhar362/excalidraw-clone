@@ -1,0 +1,20 @@
+# ── Training-only dependencies (NOT needed in production/Render) ──────────────
+# Install with: pip install -r requirements-train.txt
+# Run training on a GPU machine or Google Colab.
+
+# ML framework
+torch>=2.2.0
+torchvision>=0.17.0
+
+# Stable Diffusion / ControlNet (legacy enhancement path)
+diffusers>=0.25.0
+transformers>=4.37.0
+accelerate>=0.26.1
+
+# Training utilities
+tqdm
+wandb  # optional experiment tracking
+
+# ONNX export
+onnx>=1.15.0
+onnxruntime>=1.17.0

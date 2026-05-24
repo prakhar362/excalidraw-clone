@@ -7,9 +7,7 @@ import traceback
 from typing import Optional, List
 
 from app.models.core import IntentClassifier
-from app.models.sketch_enhancement import SketchEnhancer, Vectorizer
-from app.models.sketch_enhancer_v2 import SketchEnhancerV2, EnhancementStyle
-from app.models.vectorizer_v2 import VectorizerV2
+from app.models.sketch_enhancement import SketchEnhancer, Vectorizer, SketchEnhancerV2, EnhancementStyle, VectorizerV2
 from app.models.math_solving import MathSolver
 from app.models.text_conversion import HandwritingRecognizer, TextStyler
 from app.config import config
@@ -33,6 +31,11 @@ handwriting_recognizer: Optional[HandwritingRecognizer] = None
 vectorizer:             Optional[Vectorizer]            = None
 vectorizer_v2:          Optional[VectorizerV2]          = None
 text_styler:            Optional[TextStyler]            = None
+
+# Global variables to cache the latest preview image
+latest_preview_content: Optional[bytes] = None
+latest_preview_mime: str = "image/png"
+
 
 
 @app.on_event("startup")
@@ -93,6 +96,19 @@ def _read_image(contents: bytes) -> Image.Image:
         image.thumbnail((config.MAX_IMAGE_SIZE, config.MAX_IMAGE_SIZE))
     return image
 
+
+# ── Preview Image CDN Log Route ────────────────────────────────────────────────
+@app.get("/api/ml/preview-image")
+async def get_latest_preview_image():
+    """
+    Returns the raw binary bytes of the latest enhanced preview image (SVG or JPEG).
+    Provides a clickable URL for terminal logs.
+    """
+    from fastapi.responses import Response
+    global latest_preview_content, latest_preview_mime
+    if latest_preview_content is None:
+        raise HTTPException(status_code=404, detail="No preview image generated yet")
+    return Response(content=latest_preview_content, media_type=latest_preview_mime)
 
 # ── Health ────────────────────────────────────────────────────────────────────
 
@@ -417,8 +433,30 @@ async def enhance_sketch_v2_endpoint(
         
         # Add preview if requested
         if return_preview:
-            preview_base64 = sketch_enhancer_v2.image_to_base64(enhanced_image)
-            response_data["preview"] = preview_base64
+            if "preview" in result:
+                response_data["preview"] = result["preview"]
+            else:
+                preview_base64 = sketch_enhancer_v2.image_to_base64(enhanced_image)
+                response_data["preview"] = preview_base64
+
+            # Parse and cache latest preview image bytes for logs
+            import base64
+            global latest_preview_content, latest_preview_mime
+            preview_str = response_data["preview"]
+            if preview_str.startswith("data:"):
+                try:
+                    header, encoded = preview_str.split(",", 1)
+                    mime = header.split(";")[0].split(":")[1]
+                    latest_preview_mime = mime
+                    latest_preview_content = base64.b64decode(encoded)
+                    
+                    # Highly visible, clickable URL logged directly to console terminal
+                    print("\n" + "="*80)
+                    print(f"[PREVIEW IMAGE URL IN LOGS]")
+                    print(f"CLEAN PREVIEW URL: http://localhost:8000/api/ml/preview-image")
+                    print("="*80 + "\n")
+                except Exception as e:
+                    print(f"[WARN] Failed to cache preview image: {e}")
         
         # Convert to vectors if requested
         if return_vectors:
@@ -512,15 +550,27 @@ async def enhance_sketch_batch(
 @app.get("/api/ml/enhancement-info")
 async def get_enhancement_info():
     """
-    Get information about available enhancement methods
+    Get information about available enhancement methods.
+
+    Enhancement priority:
+      1. onnx-ml   — Pretrained Informative Drawings ONNX model (CPU, ~17 MB)
+      2. gemini-ai — Gemini 3.5 Flash cloud (only when use_ai=true & GEMINI_API_KEY set)
+      3. opencv    — Classical OpenCV pipeline (always available)
     """
     return JSONResponse({
+        "onnx_ml_available": sketch_enhancer_v2.onnx_ready,
         "opencv_available": sketch_enhancer_v2.opencv_ready,
         "controlnet_available": sketch_enhancer_v2.controlnet_ready,
         "ai_enhancement_enabled": bool(config.GEMINI_API_KEY) or config.ENABLE_AI_ENHANCEMENT,
         "styles": ["professional", "artistic", "clean", "minimal"],
         "default_style": "professional",
         "max_image_size": config.SKETCH_MAX_SIZE,
+        "enhancement_methods": {
+            "onnx-ml": "Informative Drawings ML model (pretrained, CPU-fast)",
+            "gemini-ai": "Gemini 3.5 Flash cloud AI vectorizer",
+            "opencv": "Classical OpenCV pipeline (always available)",
+            "controlnet": "Stable Diffusion ControlNet (legacy, disabled)"
+        },
         "recommended_use": {
             "professional": "Technical drawings, diagrams, architecture",
             "artistic": "Hand-drawn illustrations, creative sketches",

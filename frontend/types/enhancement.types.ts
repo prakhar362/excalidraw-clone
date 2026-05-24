@@ -11,7 +11,7 @@ export interface EnhancementRequest {
 export interface EnhancementResult {
   success: boolean;
   style: EnhancementStyle;
-  method: 'opencv' | 'controlnet';
+  method: 'onnx-ml' | 'gemini-ai' | 'opencv' | 'controlnet';
   confidence: number;
   preview?: string;
   elements?: ExcalidrawElement[];
@@ -20,12 +20,14 @@ export interface EnhancementResult {
 }
 
 export interface EnhancementInfo {
+  onnx_ml_available: boolean;
   opencv_available: boolean;
   controlnet_available: boolean;
   ai_enhancement_enabled: boolean;
   styles: EnhancementStyle[];
   default_style: EnhancementStyle;
   max_image_size: number;
+  enhancement_methods?: Record<string, string>;
   recommended_use: Record<EnhancementStyle, string>;
 }
 

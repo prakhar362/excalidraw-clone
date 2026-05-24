@@ -2,3 +2,16 @@ venv
 .env
 render.yaml
 SETUP.md
+
+# ONNX model cache (auto-downloaded at startup, not committed to git)
+checkpoints/
+
+# Temp files
+temp/
+__pycache__/
+*.pyc
+*.pyo
+
+# Training data (large, generated locally)
+data/
+training/data/

@@ -1,16 +1,31 @@
+# ── Core API ────────────────────────────────────────────────────────────────
 fastapi
 uvicorn[standard]
 python-multipart
 python-dotenv
-sympy
-opencv-python-headless>=4.9.0.80
-scikit-image>=0.22.0
-scipy>=1.11.4
-diffusers>=0.25.0
-transformers>=4.37.0
-accelerate>=0.26.1
+
+# ── Image processing ─────────────────────────────────────────────────────────
 Pillow
 numpy>=1.26.4
+opencv-python-headless>=4.9.0.80
+scikit-image>=0.22.0
+
+# ── ONNX ML model inference (Informative Drawings - ~17MB, CPU-only) ─────────
+# Lightweight — no PyTorch/CUDA required, builds fast on Render free tier
+onnxruntime>=1.17.0
+
+# ── Math / signal processing ─────────────────────────────────────────────────
+# scipy: used only in vectorizer_v2.py for spline smoothing
+# NOTE: if Render build fails on scipy, pin to a pre-built wheel:
+#   scipy==1.12.0
+scipy>=1.11.4
+
+# ── Gemini AI (fallback enhancer + math solver + handwriting OCR) ─────────────
+google-genai
 requests
-google-generativeai
+
+# ── Handwriting recognition ───────────────────────────────────────────────────
 easyocr
+
+# ── Math solver ──────────────────────────────────────────────────────────────
+sympy

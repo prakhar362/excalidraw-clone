@@ -26,7 +26,7 @@ export const EnhancementPreview: React.FC<EnhancementPreviewProps> = ({
   const [originalUrl, setOriginalUrl] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [enhancedElements, setEnhancedElements] = useState<ExcalidrawElement[] | null>(null);
-  const [boundsInfo, setBoundsInfo] = useState<{ minX: number; minY: number; } | null>(null);
+  const [boundsInfo, setBoundsInfo] = useState<{ minX: number; minY: number; width: number; height: number; } | null>(null);
   const [replaceOriginal, setReplaceOriginal] = useState<boolean>(true);
   const [aiAvailable, setAiAvailable] = useState<boolean>(false);
 
@@ -63,9 +63,29 @@ export const EnhancementPreview: React.FC<EnhancementPreviewProps> = ({
           return;
         }
 
-        const minX = Math.min(...selected.map((el: any) => el.x));
-        const minY = Math.min(...selected.map((el: any) => el.y));
-        setBoundsInfo({ minX, minY });
+        let minX = Infinity;
+        let minY = Infinity;
+        let maxX = -Infinity;
+        let maxY = -Infinity;
+        
+        selected.forEach((el: any) => {
+          minX = Math.min(minX, el.x);
+          minY = Math.min(minY, el.y);
+          
+          if (el.points && el.points.length > 0) {
+            const xs = el.points.map((p: number[]) => p[0]);
+            const ys = el.points.map((p: number[]) => p[1]);
+            maxX = Math.max(maxX, el.x + Math.max(...xs));
+            maxY = Math.max(maxY, el.y + Math.max(...ys));
+          } else {
+            maxX = Math.max(maxX, el.x + (el.width || 0));
+            maxY = Math.max(maxY, el.y + (el.height || 0));
+          }
+        });
+
+        const width = maxX - minX;
+        const height = maxY - minY;
+        setBoundsInfo({ minX, minY, width, height });
 
         // 2. Extract cropped selection as PNG Blob
         const blob = await CanvasUtils.extractSelectionAsImage(excalidrawAPI, selectedIds);
@@ -183,6 +203,92 @@ export const EnhancementPreview: React.FC<EnhancementPreviewProps> = ({
     } catch (err: any) {
       console.error(err);
       toast.error('Failed to apply elements: ' + err.message);
+    }
+  };
+
+  // Insert enhanced sketch as a premium image element rather than vector elements
+  const handleApplyAsImage = async () => {
+    if (!excalidrawAPI || !previewUrl || !boundsInfo) return;
+
+    try {
+      const existing = excalidrawAPI.getSceneElements();
+      
+      const padding = 20;
+      const ox = boundsInfo.minX - padding;
+      const oy = boundsInfo.minY - padding;
+      const w = boundsInfo.width + padding * 2;
+      const h = boundsInfo.height + padding * 2;
+
+      const fileId = `file_enhanced_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
+
+      const isSvg = previewUrl.startsWith('data:image/svg+xml');
+      const mimeType = isSvg ? 'image/svg+xml' : 'image/png';
+
+      // 1. Add the file to Excalidraw's binary files store
+      excalidrawAPI.addFiles([{
+        id: fileId,
+        dataURL: previewUrl,
+        mimeType: mimeType,
+        created: Date.now()
+      }]);
+
+      // 2. Create the Excalidraw Image element
+      const imageElement = {
+        id: `enhanced_img_${Date.now()}`,
+        type: 'image',
+        x: ox,
+        y: oy,
+        width: w,
+        height: h,
+        angle: 0,
+        strokeColor: 'transparent',
+        backgroundColor: 'transparent',
+        fillStyle: 'hachure',
+        strokeWidth: 1,
+        strokeStyle: 'solid',
+        roughness: 0,
+        opacity: 100,
+        groupIds: [],
+        frameId: null,
+        roundness: null,
+        seed: Math.floor(Math.random() * 1e6),
+        version: 1,
+        versionNonce: Math.floor(Math.random() * 1e6),
+        isDeleted: false,
+        boundElements: null,
+        updated: Date.now(),
+        link: null,
+        locked: false,
+        fileId: fileId,
+        status: 'saved', // Mark as saved so Excalidraw renders it immediately
+        scale: [1, 1]
+      };
+
+      // Import native element converter if available
+      let safeElements = [imageElement];
+      try {
+        const { convertToExcalidrawElements } = await import('@excalidraw/excalidraw');
+        safeElements = convertToExcalidrawElements([imageElement]);
+      } catch (e) {
+        console.warn('Fallback: injecting raw JSON image element');
+      }
+
+      let nextElements = [...existing];
+
+      if (replaceOriginal) {
+        // Remove original selected elements
+        nextElements = existing.filter((el: any) => !selectedIds.includes(el.id));
+      }
+
+      excalidrawAPI.updateScene({
+        elements: [...nextElements, ...safeElements]
+      });
+
+      toast.success(replaceOriginal ? '🎨 Rough sketch replaced with premium image!' : '🎨 Premium image inserted!');
+      onClose();
+    } catch (err: any) {
+      console.error(err);
+      toast.error('Failed to apply image: ' + err.message);
     }
   };
 
@@ -351,7 +457,7 @@ export const EnhancementPreview: React.FC<EnhancementPreviewProps> = ({
         </div>
 
         {/* Modal Footer */}
-        <div className="bg-slate-50 border-t border-slate-100 px-6 py-4 flex justify-end gap-3 shrink-0">
+        <div className="bg-slate-50 border-t border-slate-100 px-6 py-4 flex justify-between items-center shrink-0">
           <button 
             onClick={onClose} 
             className="px-4 py-2 border border-slate-200 hover:bg-white text-slate-600 rounded-xl text-sm font-semibold transition"
@@ -359,14 +465,29 @@ export const EnhancementPreview: React.FC<EnhancementPreviewProps> = ({
             Cancel
           </button>
           
-          <button
-            onClick={handleApply}
-            disabled={loading || !enhancedElements}
-            className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white px-6 py-2 rounded-xl text-sm font-semibold transition shadow-md shadow-indigo-600/10 cursor-pointer disabled:cursor-not-allowed"
-          >
-            <Check className="h-4 w-4" />
-            Place on Canvas
-          </button>
+          <div className="flex gap-3">
+            {/* Previous vector strokes insert */}
+            <button
+              onClick={handleApply}
+              disabled={loading || !enhancedElements}
+              className="flex items-center gap-1.5 border border-indigo-200 hover:border-indigo-300 hover:bg-indigo-50/50 disabled:opacity-50 text-indigo-700 px-4 py-2 rounded-xl text-sm font-semibold transition cursor-pointer disabled:cursor-not-allowed"
+              title="Insert as editable Excalidraw vector shapes (may lose details)"
+            >
+              <Layers className="h-4 w-4" />
+              Place as Vector Strokes
+            </button>
+
+            {/* Premium High-Fidelity Image insert */}
+            <button
+              onClick={handleApplyAsImage}
+              disabled={loading || !previewUrl}
+              className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white px-6 py-2 rounded-xl text-sm font-semibold transition shadow-md shadow-indigo-600/10 cursor-pointer disabled:cursor-not-allowed"
+              title="Insert as a clean, pixel-perfect, high-fidelity image (Recommended)"
+            >
+              <Check className="h-4 w-4" />
+              Place as Premium Image
+            </button>
+          </div>
         </div>
 
       </div>
