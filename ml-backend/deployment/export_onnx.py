@@ -48,6 +48,17 @@ def export(weight_name="sketch_enhancer_best.pth", onnx_name="sketch_enhancer.on
                 "output": {0: "batch_size"}
             }
         )
+        
+        # Post-process to embed external weights (.data file) into a single self-contained file
+        import onnx
+        data_file_path = Path(str(onnx_path) + ".data")
+        if data_file_path.exists():
+            print("Embedding external weights (.data) into a single self-contained ONNX model...")
+            onnx_model = onnx.load(str(onnx_path))
+            onnx.save(onnx_model, str(onnx_path))
+            data_file_path.unlink() # Safely delete the external weights file as it is now embedded
+            print("[OK] Obsolete external .data file safely removed.")
+            
         print("-------------------------------------------------------")
         print(f"[SUCCESS] ONNX Model exported successfully!")
         print(f"File Path: {onnx_path}")

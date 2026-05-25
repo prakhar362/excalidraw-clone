@@ -5,7 +5,7 @@ SETUP.md
 
 # ONNX model cache (auto-downloaded at startup, not committed to git)
 checkpoints/*
-!checkpoints/sketch_enhancer.onnx
+checkpoints/sketch_enhancer.onnx
 
 # Temp files
 temp/
@@ -15,4 +15,4 @@ __pycache__/
 
 # Training data (large, generated locally)
 data/
-training/data/
+training/data/

@@ -185,6 +185,7 @@ def train(args):
                 # Get a small batch of validation samples
                 corr_val, clean_val = next(iter(val_loader))
                 corr_val = corr_val.to(device)
+                clean_val = clean_val.to(device)
                 with get_autocast_context():
                     fake_val = net_g(corr_val)
                 
