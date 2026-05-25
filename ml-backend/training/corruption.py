@@ -167,42 +167,50 @@ class SketchCorruptor:
 
 def batch_corrupt_dataset():
     """
-    Builds data/pairs/clean/ and data/pairs/corrupted/ directories
-    by taking all files from data/clean/ and running them through the SketchCorruptor.
+    Loads data/clean_sketches.npz, corrupts all clean drawings using SketchCorruptor,
+    and packages them into data/corrupted_sketches.npz.
     """
     data_dir = Path(__file__).parent.parent / "data"
-    clean_dir = data_dir / "clean"
-    pairs_clean_dir = data_dir / "pairs" / "clean"
-    pairs_corr_dir = data_dir / "pairs" / "corrupted"
+    clean_npz_path = data_dir / "clean_sketches.npz"
+    corr_npz_path = data_dir / "corrupted_sketches.npz"
     
-    pairs_clean_dir.mkdir(parents=True, exist_ok=True)
-    pairs_corr_dir.mkdir(parents=True, exist_ok=True)
-    
-    clean_files = list(clean_dir.glob("*.png"))
-    if not clean_files:
-        print("[ERROR] No clean images found in data/clean/. Please run download_datasets.py first!")
+    if not clean_npz_path.exists():
+        print(f"[ERROR] Clean sketches archive not found at: {clean_npz_path}. Please run download_datasets.py first!")
         return
         
-    print(f"Creating corrupted training pairs from {len(clean_files)} clean drawings...")
+    print(f"Loading clean sketches from {clean_npz_path}...")
+    clean_data = np.load(clean_npz_path)
+    clean_sketches = clean_data["sketches"]
+    
+    num_sketches = len(clean_sketches)
+    print(f"Generating corrupted counterpart drawings for {num_sketches} sketches...")
     corruptor = SketchCorruptor()
     
-    for idx, clean_path in enumerate(clean_files):
-        if idx % 100 == 0:
-            print(f"Processed {idx}/{len(clean_files)} files...")
+    corr_sketches = []
+    for idx in range(num_sketches):
+        if (idx + 1) % 2000 == 0 or (idx + 1) == num_sketches:
+            print(f"Processed {idx + 1}/{num_sketches} sketches...")
             
         try:
-            clean_img = Image.open(clean_path).convert("L")
+            # clean_sketches[idx] is a uint8 numpy array of size 256x256
+            clean_img = Image.fromarray(clean_sketches[idx])
             # Apply sketch corruptor
             corr_img = corruptor.corrupt(clean_img)
-            
-            # Save pairs
-            file_name = clean_path.name
-            clean_img.save(pairs_clean_dir / file_name)
-            corr_img.save(pairs_corr_dir / file_name)
+            corr_np = np.array(corr_img, dtype=np.uint8)
+            corr_sketches.append(corr_np)
         except Exception as e:
-            print(f"[WARN] Failed to process {clean_path.name}: {e}")
+            print(f"[WARN] Failed to process sketch index {idx}: {e}")
+            # Fallback to copy the clean one as baseline
+            corr_sketches.append(clean_sketches[idx])
             
-    print(f"[SUCCESS] Synthetic pairs generated! Saved in data/pairs/")
+    if corr_sketches:
+        corr_arr = np.stack(corr_sketches, axis=0)
+        print(f"Saving {len(corr_arr)} corrupted sketches to compressed NPZ archive: {corr_npz_path}...")
+        np.savez_compressed(corr_npz_path, sketches=corr_arr)
+        print(f"[SUCCESS] Saved corrupted_sketches.npz. Size: {corr_npz_path.stat().st_size / (1024*1024):.2f} MB")
+    else:
+        print("[ERROR] No corrupted sketches were generated!")
 
 if __name__ == "__main__":
     batch_corrupt_dataset()
+

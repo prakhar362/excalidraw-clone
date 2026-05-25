@@ -93,13 +93,13 @@ def render_quickdraw_drawing(drawing, size=256, stroke_width=3):
             
     return img
 
-def download_and_render_quickdraw(samples_per_category=300):
-    print("--- 1. Setting up QuickDraw Dataset ---")
+def download_and_render_quickdraw(samples_per_category=200):
+    print("--- 1. Setting up QuickDraw Dataset directly to NPZ ---")
     import urllib.parse
+    sketches = []
+    
     for category in QUICKDRAW_CATEGORIES:
         category_safe = category.replace(" ", "_")
-        
-        # URL encode spaces to %20 for Google Storage bucket compatibility
         url_encoded_category = urllib.parse.quote(category)
         url = f"https://storage.googleapis.com/quickdraw_dataset/full/simplified/{url_encoded_category}.ndjson"
         
@@ -117,75 +117,39 @@ def download_and_render_quickdraw(samples_per_category=300):
                     
                     if "drawing" in data:
                         pil_img = render_quickdraw_drawing(data["drawing"])
-                        save_path = CLEAN_DIR / f"quickdraw_{category_safe}_{count}.png"
-                        pil_img.save(save_path)
+                        img_np = np.array(pil_img, dtype=np.uint8)
+                        sketches.append(img_np)
                         count += 1
                         
             print(f"[OK] Rendered {count} clean drawings for: {category_safe}")
         except Exception as e:
             print(f"[ERROR] Failed to process category {category_safe}: {e}")
+            
+    if sketches:
+        sketches_arr = np.stack(sketches, axis=0)
+        npz_path = DATA_DIR / "clean_sketches.npz"
+        print(f"Saving {len(sketches_arr)} clean sketches to compressed NPZ archive: {npz_path}...")
+        np.savez_compressed(npz_path, sketches=sketches_arr)
+        print(f"[SUCCESS] Saved clean_sketches.npz. Size: {npz_path.stat().st_size / (1024*1024):.2f} MB")
+    else:
+        print("[ERROR] No sketches were generated!")
 
 def download_tu_berlin():
-    print("--- 2. Setting up TU-Berlin Sketch Dataset (Optional) ---")
-    dest_zip = DATA_DIR / "temp" / "tu_berlin.zip"
-    
-    if not dest_zip.exists():
-        print("Downloading TU-Berlin sketch dataset zip archive...")
-        try:
-            # Setting a User-Agent so GitHub doesn't block the direct archive request
-            req = urllib.request.Request(
-                TU_BERLIN_URL,
-                headers={"User-Agent": "Mozilla/5.0"}
-            )
-            with urllib.request.urlopen(req) as response, open(dest_zip, 'wb') as out_file:
-                shutil.copyfileobj(response, out_file)
-            print("[OK] Download finished")
-        except Exception as e:
-            print(f"[WARN] Failed to download TU-Berlin dataset: {e}.")
-            print("We will rely primarily on the generated QuickDraw sketch database.")
-            return
-
-    # Unpack and extract sketches
-    extract_dir = DATA_DIR / "temp" / "tu_berlin_extracted"
-    if not extract_dir.exists():
-        print("Extracting TU-Berlin zip file...")
-        try:
-            with zipfile.ZipFile(dest_zip, 'r') as zip_ref:
-                zip_ref.extractall(extract_dir)
-            print("[OK] Extraction complete")
-        except Exception as e:
-            print(f"[ERROR] Failed to extract zip: {e}")
-            return
-
-    # TU-Berlin bitmap format files are inside subfolders. Find all PNGs
-    print("Importing TU-Berlin drawings to data/clean/...")
-    count = 0
-    for root, dirs, files in os.walk(extract_dir):
-        for file in files:
-            if file.lower().endswith(".png"):
-                src_path = Path(root) / file
-                # Save to unified database
-                dest_path = CLEAN_DIR / f"tuberlin_{count}.png"
-                try:
-                    # Open, resize to 256x256, convert to grayscale
-                    img = Image.open(src_path).convert("L")
-                    img = img.resize((256, 256), Image.Resampling.LANCZOS)
-                    img.save(dest_path)
-                    count += 1
-                except Exception as e:
-                    continue
-                    
-    print(f"[OK] Imported {count} sketches from TU-Berlin dataset.")
+    # TU-Berlin is deprecated in this fast NPZ pipeline, we rely on the 345 QuickDraw categories
+    print("--- 2. TU-Berlin sketch dataset (Skipped in fast NPZ pipeline) ---")
+    pass
 
 if __name__ == "__main__":
     ensure_dirs()
-    # Download and process QuickDraw categories
-    download_and_render_quickdraw(samples_per_category=500)
-    # Download and process TU-Berlin dataset
-    download_tu_berlin()
+    # Download and process QuickDraw categories to NPZ directly
+    download_and_render_quickdraw(samples_per_category=200)
     
-    total_images = len(list(CLEAN_DIR.glob("*.png")))
-    print(f"\n=======================================================")
-    print(f"[SUCCESS] Datasets fully set up!")
-    print(f"Total pristine grayscale clean sketch files in data/clean/: {total_images}")
-    print(f"=======================================================")
+    npz_path = DATA_DIR / "clean_sketches.npz"
+    if npz_path.exists():
+        print(f"\n=======================================================")
+        print(f"[SUCCESS] Datasets fully set up!")
+        print(f"Single pristine sketch database saved at: {npz_path}")
+        print(f"=======================================================")
+    else:
+        print("\n[ERROR] Setup failed! clean_sketches.npz was not created.")
+
