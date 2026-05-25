@@ -51,7 +51,7 @@ class SketchEnhancerV2:
     # ------------------------------------------------------------------
 
     def _load_onnx_model(self):
-        """Load the pretrained Informative Drawings ONNX model."""
+        """Load the Custom Pix2Pix GAN or Informative Drawings ONNX model."""
         try:
             from app.models.sketch_enhancement.gan.onnx_inference import ONNXSketchEnhancer
             enhancer = ONNXSketchEnhancer(
@@ -61,7 +61,8 @@ class SketchEnhancerV2:
             if enhancer.load():
                 self._onnx_enhancer = enhancer
                 self.onnx_ready = True
-                print("[OK] ONNX ML sketch enhancer ready (Informative Drawings model)")
+                model_type = "Custom Pix2Pix GAN" if enhancer.is_custom_gan else "Informative Drawings"
+                print(f"[OK] ONNX ML sketch enhancer ready ({model_type} model)")
             else:
                 print("[WARN] ONNX model failed to load — will use Gemini/OpenCV")
         except Exception as e:
@@ -111,18 +112,43 @@ class SketchEnhancerV2:
         """
         Enhance a sketch using the best available method.
 
-        Priority:
-          use_ai=True  -> ONNX ML -> Gemini (if OOD) -> OpenCV
-          use_ai=False -> ONNX ML -> OpenCV
+        Priority when use_ai=True:
+          1. Custom Pix2Pix GAN (if checkpoints/sketch_enhancer.onnx exists and not OOD)
+          2. Gemini AI fallback (for OOD sketches or if Custom GAN inference fails)
+          3. OpenCV Classical baseline (always available fallback)
 
-        Returns dict with keys:
-            enhanced_image (PIL Image), style, method, confidence,
-            elements (optional, from Gemini path)
+        Priority when use_ai=False:
+          1. Pretrained ONNX ML Line-Art model (if available)
+          2. OpenCV Classical baseline
         """
         print(f"Enhancing sketch: style={style}, use_ai={use_ai}, "
               f"onnx_ready={self.onnx_ready}")
 
-        # -- Strategy 1: Gemini AI (only if use_ai and key present) ----
+        gan_ready = self.onnx_ready and self._onnx_enhancer is not None and self._onnx_enhancer.is_custom_gan
+
+        # -- Strategy 1: Custom Pix2Pix GAN (primary AI strategy) ------
+        if use_ai and gan_ready:
+            is_ood = self._detect_out_of_distribution(image)
+            if not is_ood:
+                try:
+                    print("Attempting Custom Pix2Pix GAN sketch enhancement...")
+                    enhanced_pil = self._onnx_enhancer.enhance(image)
+                    enhanced_pil = self._apply_style_to_onnx_output(enhanced_pil, style)
+                    print("[OK] Custom Pix2Pix GAN sketch enhancement complete")
+                    return {
+                        "enhanced_image": enhanced_pil,
+                        "style": style,
+                        "method": "custom_gan",
+                        "confidence": 0.96,
+                    }
+                except Exception as e:
+                    import traceback
+                    print(f"[WARN] Custom GAN failed: {e}. Falling back to Gemini...")
+                    print(traceback.format_exc())
+            else:
+                print("Sketch detected as Out-Of-Distribution. Routing directly to Gemini...")
+
+        # -- Strategy 2: Gemini AI (secondary AI strategy) ------------
         if use_ai and config.GEMINI_API_KEY:
             try:
                 print("Attempting Gemini AI sketch enhancement...")
@@ -131,12 +157,12 @@ class SketchEnhancerV2:
                 import traceback
                 print(f"[WARN] Gemini AI failed: {e}")
                 print(traceback.format_exc())
-                print("Falling back to ONNX...")
+                print("Falling back to standard line-art ONNX model...")
 
-        # -- Strategy 2: ONNX ML model ---------------------------------
+        # -- Strategy 3: Pretrained ONNX Line-Art Model (offline/fallback)
         if self.onnx_ready and self._onnx_enhancer is not None:
             try:
-                print("Running ONNX ML enhancement (Informative Drawings)...")
+                print("Running standard ONNX ML line-art enhancement...")
                 enhanced_pil = self._onnx_enhancer.enhance(image)
                 # Apply style-specific post-processing on top of the ML output
                 enhanced_pil = self._apply_style_to_onnx_output(enhanced_pil, style)
@@ -153,7 +179,7 @@ class SketchEnhancerV2:
                 print(traceback.format_exc())
                 print("Falling back to next strategy...")
 
-        # -- Strategy 3: OpenCV (always available) ---------------------
+        # -- Strategy 4: OpenCV (always-available baseline) ------------
         preprocessed = self.preprocessor.preprocess(image)
 
         if use_ai and self.controlnet_ready:
@@ -175,6 +201,42 @@ class SketchEnhancerV2:
             "method": "opencv",
             "confidence": 0.80,
         }
+
+    def _detect_out_of_distribution(self, image: Image.Image) -> bool:
+        """
+        Heuristic: is this sketch likely outside GAN training distribution?
+        Returns True if we should skip GAN and use Gemini instead.
+        """
+        try:
+            img_arr = np.array(image.convert("L"))
+            h, w = img_arr.shape
+            
+            # Heuristic 1: Extreme Aspect Ratio (usually text/equations/long labels)
+            aspect_ratio = w / h
+            if aspect_ratio > 3.0 or aspect_ratio < 0.33:
+                print(f"[OOD Heuristic] Extreme aspect ratio ({aspect_ratio:.2f}). Skip GAN.")
+                return True
+                
+            # Heuristic 2: Contour Density
+            # Invert to make lines white on black
+            _, binary = cv2.threshold(img_arr, 240, 255, cv2.THRESH_BINARY_INV)
+            contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            
+            num_contours = len(contours)
+            if num_contours < 2:
+                # Trivial/sparse shapes
+                print(f"[OOD Heuristic] Ultra-sparse sketch ({num_contours} contours). Skip GAN.")
+                return True
+                
+            if num_contours > 60:
+                # Too complex (diagrams, text paragraphs, high density drawings)
+                print(f"[OOD Heuristic] High-density complex sketch ({num_contours} contours). Skip GAN.")
+                return True
+                
+            return False
+        except Exception as e:
+            print(f"[WARN] OOD Heuristic check failed: {e}. Defaulting to not OOD.")
+            return False
 
     # ------------------------------------------------------------------
     # Style post-processing for ONNX output
