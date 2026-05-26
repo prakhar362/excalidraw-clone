@@ -10,11 +10,11 @@ from training.corruption import SketchCorruptor
 class SketchPairDataset(Dataset):
     """
     PyTorch Dataset loading (corrupted_sketch, clean_sketch) image pairs.
-    
-    Supports two input formats:
-      1. Compressed NPZ Archives (clean_sketches.npz and corrupted_sketches.npz) - Recommended & Fast!
-      2. Traditional PNG image files in clean and corrupted pair directories.
     """
+    
+    # Class-level cache to prevent OOM when instantiating multiple splits
+    _cache = {}
+
     def __init__(self, data_root=None, split="train", val_ratio=0.2, dynamic_corruption=False):
         super(SketchPairDataset, self).__init__()
         
@@ -38,15 +38,20 @@ class SketchPairDataset(Dataset):
         ])
         
         if self.use_npz:
-            print(f"[Dataset] Loading dataset in-memory from NPZ archive: {self.clean_npz_path.name}")
-            clean_data = np.load(self.clean_npz_path)
-            # Store as torch ByteTensor to keep memory footprint tiny and prevent OOM
-            self.clean_sketches = torch.from_numpy(clean_data["sketches"]).unsqueeze(1) # shape: (num_samples, 1, 256, 256)
+            if "clean_sketches" not in SketchPairDataset._cache:
+                print(f"[Dataset] Loading dataset in-memory from NPZ archive: {self.clean_npz_path.name}")
+                clean_data = np.load(self.clean_npz_path)
+                # Store as torch ByteTensor to keep memory footprint tiny and prevent OOM
+                SketchPairDataset._cache["clean_sketches"] = torch.from_numpy(clean_data["sketches"]).unsqueeze(1) # shape: (num_samples, 1, 256, 256)
+                
+                if not self.dynamic_corruption:
+                    corr_data = np.load(self.corr_npz_path)
+                    SketchPairDataset._cache["corr_sketches"] = torch.from_numpy(corr_data["sketches"]).unsqueeze(1) # shape: (num_samples, 1, 256, 256)
+                    assert len(SketchPairDataset._cache["clean_sketches"]) == len(SketchPairDataset._cache["corr_sketches"]), "Sketches array sizes mismatch!"
             
+            self.clean_sketches = SketchPairDataset._cache["clean_sketches"]
             if not self.dynamic_corruption:
-                corr_data = np.load(self.corr_npz_path)
-                self.corr_sketches = torch.from_numpy(corr_data["sketches"]).unsqueeze(1) # shape: (num_samples, 1, 256, 256)
-                assert len(self.clean_sketches) == len(self.corr_sketches), "Sketches array sizes mismatch!"
+                self.corr_sketches = SketchPairDataset._cache["corr_sketches"]
                 
             total_samples = len(self.clean_sketches)
             

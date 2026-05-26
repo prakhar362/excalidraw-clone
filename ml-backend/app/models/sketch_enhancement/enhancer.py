@@ -126,7 +126,18 @@ class SketchEnhancerV2:
 
         gan_ready = self.onnx_ready and self._onnx_enhancer is not None and self._onnx_enhancer.is_custom_gan
 
-        # -- Strategy 1: Custom Pix2Pix GAN (primary AI strategy) ------
+        # -- Strategy 1: Gemini AI (Primary AI strategy for accurate output) ------------
+        if use_ai and config.GEMINI_API_KEY:
+            try:
+                print("Attempting AI sketch enhancement...")
+                return self._enhance_with_gemini(image, style)
+            except Exception as e:
+                import traceback
+                print(f"[WARN] Gemini AI failed: {e}")
+                print(traceback.format_exc())
+                print("Falling back to Custom GAN...")
+
+        # -- Strategy 2: Custom Pix2Pix GAN (Fallback / Interview Demonstration) ------
         if use_ai and gan_ready:
             is_ood = self._detect_out_of_distribution(image)
             if not is_ood:
@@ -143,21 +154,10 @@ class SketchEnhancerV2:
                     }
                 except Exception as e:
                     import traceback
-                    print(f"[WARN] Custom GAN failed: {e}. Falling back to Gemini...")
+                    print(f"[WARN] Custom GAN failed: {e}. Falling back to classical ONNX...")
                     print(traceback.format_exc())
             else:
-                print("Sketch detected as Out-Of-Distribution. Routing directly to Gemini...")
-
-        # -- Strategy 2: Gemini AI (secondary AI strategy) ------------
-        if use_ai and config.GEMINI_API_KEY:
-            try:
-                print("Attempting Gemini AI sketch enhancement...")
-                return self._enhance_with_gemini(image, style)
-            except Exception as e:
-                import traceback
-                print(f"[WARN] Gemini AI failed: {e}")
-                print(traceback.format_exc())
-                print("Falling back to standard line-art ONNX model...")
+                print("Sketch detected as Out-Of-Distribution.")
 
         # -- Strategy 3: Pretrained ONNX Line-Art Model (offline/fallback)
         if self.onnx_ready and self._onnx_enhancer is not None:
