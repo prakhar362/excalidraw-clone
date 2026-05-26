@@ -1,7 +1,8 @@
 export type EnhancementStyle = 'professional' | 'artistic' | 'clean' | 'minimal';
 
 export interface EnhancementRequest {
-  file: Blob;
+  file?: Blob;
+  imageUrl?: string;
   style: EnhancementStyle;
   useAI: boolean;
   returnVectors: boolean;

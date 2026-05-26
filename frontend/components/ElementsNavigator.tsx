@@ -79,21 +79,42 @@ export function ElementsNavigator({ excalidrawAPI }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  /* Poll the scene every 800ms to pick up changes */
+  /* Poll the scene to pick up changes with smart change detection and adaptive polling rate */
   useEffect(() => {
     if (!excalidrawAPI) return;
 
     const refresh = () => {
       const raw: ExcalidrawElement[] = excalidrawAPI.getSceneElements() ?? [];
-      setElements(raw.filter((el) => !el.isDeleted));
+      const filtered = raw.filter((el) => !el.isDeleted);
+      
+      setElements((prev) => {
+        if (prev.length !== filtered.length) {
+          return filtered;
+        }
+        const changed = filtered.some(
+          (el, idx) =>
+            el.id !== prev[idx].id ||
+            el.type !== prev[idx].type ||
+            el.x !== prev[idx].x ||
+            el.y !== prev[idx].y ||
+            el.width !== prev[idx].width ||
+            el.height !== prev[idx].height ||
+            getLabel(el) !== getLabel(prev[idx])
+        );
+        return changed ? filtered : prev;
+      });
     };
 
     refresh();
-    intervalRef.current = setInterval(refresh, 800);
+    
+    // Poll every 500ms when open for high responsiveness, but only every 3000ms when closed to save CPU!
+    const intervalTime = open ? 500 : 3000;
+    intervalRef.current = setInterval(refresh, intervalTime);
+    
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [excalidrawAPI]);
+  }, [excalidrawAPI, open]);
 
   /* Focus element on canvas when clicked */
   const focusElement = useCallback(
@@ -252,7 +273,7 @@ export function ElementsNavigator({ excalidrawAPI }: Props) {
 
         {/* List */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '6px 0' }}>
-          {Object.keys(groups).length === 0 ? (
+          {open && (Object.keys(groups).length === 0 ? (
             <div style={{
               textAlign: 'center',
               color: '#94a3b8',
@@ -375,7 +396,7 @@ export function ElementsNavigator({ excalidrawAPI }: Props) {
                 </div>
               );
             })
-          )}
+          ))}
         </div>
 
         {/* Footer */}

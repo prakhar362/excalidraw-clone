@@ -24,6 +24,7 @@ export const EnhancementPreview: React.FC<EnhancementPreviewProps> = ({
   const [loading, setLoading] = useState<boolean>(false);
   const [originalBlob, setOriginalBlob] = useState<Blob | null>(null);
   const [originalUrl, setOriginalUrl] = useState<string | null>(null);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [enhancedElements, setEnhancedElements] = useState<ExcalidrawElement[] | null>(null);
   const [boundsInfo, setBoundsInfo] = useState<{ minX: number; minY: number; width: number; height: number; } | null>(null);
@@ -87,12 +88,38 @@ export const EnhancementPreview: React.FC<EnhancementPreviewProps> = ({
         const height = maxY - minY;
         setBoundsInfo({ minX, minY, width, height });
 
+        // Check for a single remote image element
+        let remoteUrl: string | null = null;
+        if (selected.length === 1 && selected[0].type === 'image') {
+          const singleEl = selected[0] as any;
+          if (singleEl.fileId) {
+            const files = typeof excalidrawAPI.getFiles === 'function' ? excalidrawAPI.getFiles() : {};
+            const file = files[singleEl.fileId];
+            if (file && file.dataURL && file.dataURL.startsWith('http')) {
+              remoteUrl = file.dataURL;
+              console.log("Found direct remote image URL for preview:", remoteUrl);
+              if (!remoteUrl.includes('.svg') && !remoteUrl.includes('svg+xml')) {
+                setImageUrl(remoteUrl);
+              } else {
+                setImageUrl(null); // Force binary upload for SVG files
+              }
+            }
+          }
+        }
+
         // 2. Extract cropped selection as PNG Blob
         const blob = await CanvasUtils.extractSelectionAsImage(excalidrawAPI, selectedIds);
         setOriginalBlob(blob);
 
-        if (originalUrl) URL.revokeObjectURL(originalUrl);
-        setOriginalUrl(URL.createObjectURL(blob));
+        if (originalUrl && !originalUrl.startsWith('http')) {
+          URL.revokeObjectURL(originalUrl);
+        }
+        
+        if (remoteUrl) {
+          setOriginalUrl(remoteUrl);
+        } else {
+          setOriginalUrl(URL.createObjectURL(blob));
+        }
       } catch (err: any) {
         console.error(err);
         toast.error('Failed to capture selection: ' + err.message);
@@ -105,13 +132,15 @@ export const EnhancementPreview: React.FC<EnhancementPreviewProps> = ({
     prepareOriginal();
 
     return () => {
-      if (originalUrl) URL.revokeObjectURL(originalUrl);
+      if (originalUrl && !originalUrl.startsWith('http')) {
+        URL.revokeObjectURL(originalUrl);
+      }
     };
   }, [isOpen, excalidrawAPI, selectedIds]);
 
   // Trigger enhancement API
   const handleEnhance = useCallback(async () => {
-    if (!originalBlob) return;
+    if (!originalBlob && !imageUrl) return;
 
     setLoading(true);
     setPreviewUrl(null);
@@ -119,7 +148,8 @@ export const EnhancementPreview: React.FC<EnhancementPreviewProps> = ({
 
     try {
       const result = await sketchEnhancementService.enhanceSketch({
-        file: originalBlob,
+        file: originalBlob || undefined,
+        imageUrl: imageUrl || undefined,
         style,
         useAI,
         returnPreview: true,

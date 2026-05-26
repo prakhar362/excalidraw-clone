@@ -1,6 +1,3 @@
-"use client";
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
 import { Icons } from "@/components/ui/icons";
 import Navbar  from "@/components/landing/Navbar";
 import { Hero } from "@/components/landing/hero";
@@ -12,15 +9,6 @@ import Cta  from "@/components/cta";
 import { Footerdemo } from "@/components/ui/footer-section";
 
 export default function Home() {
-  const router = useRouter();
-
-  useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      router.push('/dashboard');
-    }
-  }, [router]);
-
   return (
     <div>
       <Navbar className="top-5" />

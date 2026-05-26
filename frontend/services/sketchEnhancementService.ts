@@ -15,7 +15,12 @@ export class SketchEnhancementService {
    */
   async enhanceSketch(request: EnhancementRequest): Promise<EnhancementResult> {
     const formData = new FormData();
-    formData.append('file', request.file, 'sketch.png');
+    if (request.file) {
+      formData.append('file', request.file, 'sketch.png');
+    }
+    if (request.imageUrl) {
+      formData.append('image_url', request.imageUrl);
+    }
     formData.append('style', request.style);
     formData.append('use_ai', String(request.useAI));
     formData.append('return_vectors', String(request.returnVectors));

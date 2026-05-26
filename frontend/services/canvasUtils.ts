@@ -18,12 +18,63 @@ export class CanvasUtils {
     if (selectedElements.length === 0) {
       throw new Error('No elements selected');
     }
-    
+
+    if (selectedElements.length === 1 && selectedElements[0].type === 'image') {
+      const singleEl = selectedElements[0] as any;
+      if (singleEl.fileId) {
+        const files = typeof excalidrawAPI.getFiles === 'function' ? excalidrawAPI.getFiles() : {};
+        const file = files[singleEl.fileId];
+        if (file && file.dataURL) {
+          try {
+            console.log("Directly extracting single image element from dataURL:", file.dataURL.substring(0, 100));
+            if (file.dataURL.includes('.svg') || file.dataURL.startsWith('data:image/svg+xml')) {
+              console.log("Image is SVG. Rendering to PNG blob in browser...");
+              const pngBlob = await new Promise<Blob>((resolve, reject) => {
+                const img = new Image();
+                img.crossOrigin = "anonymous";
+                img.onload = () => {
+                  try {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = singleEl.width || img.naturalWidth || 500;
+                    canvas.height = singleEl.height || img.naturalHeight || 500;
+                    const ctx = canvas.getContext('2d');
+                    if (!ctx) {
+                      reject(new Error("Failed to get canvas context"));
+                      return;
+                    }
+                    ctx.fillStyle = 'white';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                    canvas.toBlob((blob) => {
+                      if (blob) resolve(blob);
+                      else reject(new Error("Failed to export SVG canvas to blob"));
+                    }, 'image/png');
+                  } catch (err) {
+                    reject(err);
+                  }
+                };
+                img.onerror = (e) => reject(new Error("Failed to load SVG image"));
+                img.src = file.dataURL;
+              });
+              return pngBlob;
+            } else {
+              const response = await fetch(file.dataURL);
+              const blob = await response.blob();
+              if (blob) return blob;
+            }
+          } catch (e) {
+            console.warn("Failed to fetch image directly:", e);
+          }
+        }
+      }
+    }
+
     try {
       // Use official high-fidelity Excalidraw export to image utility
       const { exportToBlob } = await import('@excalidraw/excalidraw');
       const blob = await exportToBlob({
         elements: selectedElements,
+        files: typeof excalidrawAPI.getFiles === 'function' ? excalidrawAPI.getFiles() : {},
         mimeType: 'image/png',
         appState: {
           exportBackground: true,

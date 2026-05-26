@@ -45,7 +45,7 @@ export interface MLDetectResult {
   all_scores: Record<string, number>;
 }
 
-export interface MLEnhanceResult extends MLBaseResult {}
+export interface MLEnhanceResult extends MLBaseResult { }
 
 // ── Service ───────────────────────────────────────────────────────────────────
 
@@ -140,14 +140,14 @@ class MLService {
     }
 
     // Fallback: manual canvas render
-    const pad  = 20;
+    const pad = 20;
     const minX = Math.min(...selected.map((el: any) => el.x));
     const minY = Math.min(...selected.map((el: any) => el.y));
-    const maxX = Math.max(...selected.map((el: any) => el.x + (el.width  || 0)));
+    const maxX = Math.max(...selected.map((el: any) => el.x + (el.width || 0)));
     const maxY = Math.max(...selected.map((el: any) => el.y + (el.height || 0)));
 
     const canvas = document.createElement('canvas');
-    canvas.width  = maxX - minX + pad * 2;
+    canvas.width = maxX - minX + pad * 2;
     canvas.height = maxY - minY + pad * 2;
 
     const ctx = canvas.getContext('2d')!;
@@ -173,7 +173,7 @@ class MLService {
     offsetY: number,
   ) {
     ctx.strokeStyle = element.strokeColor || '#000000';
-    ctx.lineWidth   = element.strokeWidth || 2;
+    ctx.lineWidth = element.strokeWidth || 2;
     const x = element.x - offsetX;
     const y = element.y - offsetY;
 

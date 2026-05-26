@@ -3,6 +3,7 @@ import React, { useState } from "react";
 import { useTheme } from "next-themes";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Menu as MenuIcon, Sun, X,Moon } from "lucide-react";
 import { Switch } from "./switch";
@@ -26,14 +27,26 @@ export const Menu = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const { theme, setTheme } = useTheme();
-  const [isDarkMode, setIsDarkMode] = React.useState(true)
+  const [isDarkMode, setIsDarkMode] = React.useState(true);
+  const router = useRouter();
+
   React.useEffect(() => {
     if (isDarkMode) {
       document.documentElement.classList.add("dark")
     } else {
       document.documentElement.classList.remove("dark")
     }
-  }, [isDarkMode])
+  }, [isDarkMode]);
+
+  const handleAuthRedirect = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const token = localStorage.getItem('token');
+    if (token) {
+      router.push('/dashboard');
+    } else {
+      router.push('/auth');
+    }
+  };
 
   return (
     <nav
@@ -71,11 +84,13 @@ export const Menu = ({
       {/* RIGHT: AUTH & MOBILE TOGGLE */}
       <div className="flex items-center gap-3">
         <div className="hidden sm:block">
-          <Link href="/auth">
-            <Button variant="default" className="rounded-full px-6 bg-black dark:bg-white dark:text-black">
-              Sign up
-            </Button>
-          </Link>
+          <Button 
+            variant="default" 
+            className="rounded-full px-6 bg-black dark:bg-white dark:text-black"
+            onClick={handleAuthRedirect}
+          >
+            Sign up
+          </Button>
         </div>
       
 
@@ -100,9 +115,9 @@ export const Menu = ({
             <div className="flex flex-col items-start gap-4 px-4 py-2">
               {children}
             </div>
-            <Link href="/auth" className="w-full px-2 pb-2">
-              <Button className="w-full rounded-xl">Get Started</Button>
-            </Link>
+            <div className="w-full px-2 pb-2">
+              <Button className="w-full rounded-xl" onClick={handleAuthRedirect}>Get Started</Button>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

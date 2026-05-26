@@ -3,15 +3,27 @@ import { cn } from "@/lib/utils";
 // this is a client component
 import { useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { renderCanvas } from "@/components/ui/canvas"
 import { DIcons } from "dicons";
 import { Icons } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 
 export function Hero() {
+  const router = useRouter();
+
   useEffect(() => {
     renderCanvas();
   }, []);
+
+  const handleGetStarted = () => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      router.push('/dashboard');
+    } else {
+      router.push('/auth');
+    }
+  };
 
   return (
     <section id="home">
@@ -66,11 +78,9 @@ export function Hero() {
               
                 
                 <div className="flex justify-center gap-2">
-            <Link href={"/auth"}>
-              <Button variant="default" size="lg">
-                Get Started
-              </Button>
-            </Link>
+            <Button variant="default" size="lg" onClick={handleGetStarted}>
+              Get Started
+            </Button>
             <Link href={"https://github.com/prakhar362"} target="_blank">
               <Button variant="outline" size="lg">
                 <Icons.gitHub className="h-6 w-6 mr-2 " /> GitHub

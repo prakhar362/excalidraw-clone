@@ -364,7 +364,8 @@ async def process_sketch(
 
 @app.post("/api/ml/enhance-sketch")
 async def enhance_sketch_v2_endpoint(
-    file: UploadFile = File(...),
+    file: Optional[UploadFile] = File(None),
+    image_url: Optional[str] = Form(None),
     style: EnhancementStyle = Form("professional"),
     use_ai: bool = Form(False),
     return_vectors: bool = Form(True),
@@ -375,6 +376,7 @@ async def enhance_sketch_v2_endpoint(
     
     Request:
         - file: Image file (PNG, JPEG)
+        - image_url: Direct link to image (e.g. Cloudinary url)
         - style: Enhancement style (professional/artistic/clean/minimal)
         - use_ai: Use AI enhancement if available (slower, better quality)
         - return_vectors: Return Excalidraw vector elements
@@ -393,7 +395,23 @@ async def enhance_sketch_v2_endpoint(
     """
     try:
         # Read and validate image
-        contents = await file.read()
+        if image_url:
+            print(f"Fetching remote image from URL: {image_url}")
+            import requests
+            response = requests.get(image_url, timeout=30)
+            if response.status_code != 200:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Failed to fetch image from URL: {response.status_code}"
+                )
+            contents = response.content
+        else:
+            if not file:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Either file or image_url must be provided"
+                )
+            contents = await file.read()
         
         try:
             image = Image.open(io.BytesIO(contents))
@@ -554,7 +572,7 @@ async def get_enhancement_info():
 
     Enhancement priority:
       1. onnx-ml   — Pretrained Informative Drawings ONNX model (CPU, ~17 MB)
-      2. gemini-ai — Gemini 3.5 Flash cloud (only when use_ai=true & GEMINI_API_KEY set)
+      2. gemini-ai — Gemini 2.5 Flash cloud (only when use_ai=true & GEMINI_API_KEY set)
       3. opencv    — Classical OpenCV pipeline (always available)
     """
     return JSONResponse({
@@ -567,7 +585,7 @@ async def get_enhancement_info():
         "max_image_size": config.SKETCH_MAX_SIZE,
         "enhancement_methods": {
             "onnx-ml": "Informative Drawings ML model (pretrained, CPU-fast)",
-            "gemini-ai": "Gemini 3.5 Flash cloud AI vectorizer",
+            "gemini-ai": "Gemini 2.5 Flash cloud AI vectorizer",
             "opencv": "Classical OpenCV pipeline (always available)",
             "controlnet": "Stable Diffusion ControlNet (legacy, disabled)"
         },
