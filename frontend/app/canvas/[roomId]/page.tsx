@@ -34,25 +34,25 @@ interface CursorPosition {
 export default function CanvasPage() {
   const { roomId } = useParams();
 
-  const wsRef               = useRef<WebSocket | null>(null);
-  const excalidrawAPIRef    = useRef<any>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const excalidrawAPIRef = useRef<any>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const clientId            = useRef<string>(Math.random().toString(36).slice(2));
-  const userColor           = useRef<string>(getRandomColor());
-  const username            = useRef<string>('');
-  const sendElementsTimer   = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const uploadedImageIds    = useRef<Set<string>>(new Set());
-  const imageSyncTimer      = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clientId = useRef<string>(Math.random().toString(36).slice(2));
+  const userColor = useRef<string>(getRandomColor());
+  const username = useRef<string>('');
+  const sendElementsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const uploadedImageIds = useRef<Set<string>>(new Set());
+  const imageSyncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [remoteCursors, setRemoteCursors] = useState<Record<string, CursorPosition>>({});
-  const [saveStatus,    setSaveStatus]    = useState<'idle' | 'saving' | 'saved'>('idle');
-  const [showShare,     setShowShare]     = useState(false);
-  const [copied,        setCopied]        = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [showShare, setShowShare] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [excalidrawAPI, setExcalidrawAPI] = useState<any>(null);
-  const [showAIModal,   setShowAIModal]   = useState(false);
-  const [aiPrompt,      setAiPrompt]      = useState('');
-  const [aiLoading,     setAiLoading]     = useState(false);
+  const [showAIModal, setShowAIModal] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
 
   // ── 1. JWT decode ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -69,10 +69,10 @@ export default function CanvasPage() {
   useEffect(() => {
     mlService.checkHealth()
       .then(ok => { if (ok) toast.success('🤖 ML Backend Connected', { autoClose: 2000 }); })
-      .catch(() => {});
+      .catch(() => { });
 
     // Fire-and-forget — wakes the HF container so first Text request is fast
-    fetch(HF_SPACE_ROOT, { method: 'GET', mode: 'no-cors' }).catch(() => {});
+    fetch(HF_SPACE_ROOT, { method: 'GET', mode: 'no-cors' }).catch(() => { });
   }, []);
 
   // ── 3. Load drawing history + restore Cloudinary images ───────────────
@@ -102,10 +102,10 @@ export default function CanvasPage() {
           const filesRecord: Record<string, any> = {};
           imageElements.forEach((el: any) => {
             filesRecord[el.fileId] = {
-              id:       el.fileId,
-              dataURL:  el.cloudinaryUrl,
+              id: el.fileId,
+              dataURL: el.cloudinaryUrl,
               mimeType: el.mimeType || 'image/png',
-              created:  Date.now(),
+              created: Date.now(),
             };
           });
 
@@ -128,7 +128,7 @@ export default function CanvasPage() {
 
     const connect = () => {
       if (wsRef.current?.readyState === WebSocket.CONNECTING ||
-          wsRef.current?.readyState === WebSocket.OPEN) return;
+        wsRef.current?.readyState === WebSocket.OPEN) return;
 
       const ws = new WebSocket(`${WSS_URL}?token=${token}`);
       wsRef.current = ws;
@@ -147,7 +147,7 @@ export default function CanvasPage() {
               [data.clientId]: { x: data.pointer.x, y: data.pointer.y, clientId: data.clientId, color: data.color || '#000000', username: data.username },
             }));
           }
-        } catch {}
+        } catch { }
       };
       ws.onclose = (e) => { if (!e.wasClean) reconnectTimeoutRef.current = setTimeout(connect, 3000); };
     };
@@ -197,7 +197,9 @@ export default function CanvasPage() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            contents: [{ role: 'user', parts: [{ text: `Act as an Excalidraw Architect. Transform the following description into a valid JSON array of ExcalidrawElementSkeleton objects. OUTPUT ONLY RAW JSON — no markdown, no explanation.
+            contents: [{
+              role: 'user', parts: [{
+                text: `Act as an Excalidraw Architect. Transform the following description into a valid JSON array of ExcalidrawElementSkeleton objects. OUTPUT ONLY RAW JSON — no markdown, no explanation.
 
 Rules:
 - Use convertToExcalidrawElements Skeleton API format
@@ -207,7 +209,9 @@ Rules:
 - For arrows: set x/y to match the start element, use start/end id bindings
 - Use professional muted colors (#a5d8ff info, #c0eb75 success, #ffc9c9 error)
 
-User Request: ${aiPrompt}` }] }],
+User Request: ${aiPrompt}`
+              }]
+            }],
           }),
         }
       );
@@ -238,13 +242,13 @@ User Request: ${aiPrompt}` }] }],
 
   // ── 7. Save — embeds Cloudinary URLs into image elements ──────────────
   const handleSaveToServer = async () => {
-    const token    = localStorage.getItem('token');
+    const token = localStorage.getItem('token');
     const elements = excalidrawAPIRef.current?.getSceneElements();
     if (!token || !elements || !roomId) return;
     setSaveStatus('saving');
     try {
       const files = excalidrawAPIRef.current?.getFiles() ?? {};
-      
+
       // Perform uploads for any base64 images in the scene first in parallel
       const enriched = await Promise.all(elements.map(async (el: any) => {
         if (el.type === 'image' && el.fileId) {
@@ -259,10 +263,10 @@ User Request: ${aiPrompt}` }] }],
                 if (result.success) {
                   // Add it to Excalidraw files
                   excalidrawAPIRef.current.addFiles([{
-                    id:       el.fileId,
-                    dataURL:  result.url,
+                    id: el.fileId,
+                    dataURL: result.url,
                     mimeType: f.mimeType,
-                    created:  Date.now(),
+                    created: Date.now(),
                   }]);
                   uploadedImageIds.current.add(el.fileId);
                   console.log(`[Save] ✅ Image ${el.fileId} successfully uploaded -> ${result.url}`);
@@ -293,7 +297,7 @@ User Request: ${aiPrompt}` }] }],
     }
   };
 
-  const handleShare    = () => { setShowShare(true); setCopied(false); };
+  const handleShare = () => { setShowShare(true); setCopied(false); };
   const handleCopyLink = () => {
     navigator.clipboard.writeText(window.location.href);
     setCopied(true);
@@ -313,7 +317,7 @@ User Request: ${aiPrompt}` }] }],
 
       {/* Bottom bar */}
       <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-white/90 backdrop-blur-md px-4 py-2 rounded-xl shadow-lg border border-slate-200">
-        <button onClick={() => setShowAIModal(true)} className="px-4 py-1.5 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg text-sm font-semibold hover:opacity-90 transition shadow-sm">
+        <button onClick={() => setShowAIModal(true)} className="px-4 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:opacity-90 transition shadow-sm">
           AI Magic ✨
         </button>
         <button
@@ -334,15 +338,16 @@ User Request: ${aiPrompt}` }] }],
       {showAIModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100]">
           <div className="bg-white p-6 rounded-2xl w-[450px] shadow-2xl">
-            <h3 className="text-lg font-bold mb-3 text-gray-800">Generate with AI</h3>
+            <h3 className="text-lg font-bold mb-3 text-gray-800">Generate with  SkecthCalibur AI</h3>
+            <h5 className="text-sm mb-3 text-gray-800">Write a detailed prompt of what you wish our AI to bring the best results for you !</h5>
             <textarea
               autoFocus value={aiPrompt} onChange={e => setAiPrompt(e.target.value)}
-              className="w-full border-2 border-gray-100 p-3 rounded-xl focus:border-purple-500 outline-none transition h-32 text-sm"
+              className="w-full border-2 border-gray-100 p-3 rounded-xl focus:border-blue-500 outline-none transition h-32 text-sm"
               placeholder="e.g. A system architecture with a load balancer, two servers and a database..."
             />
             <div className="flex justify-end gap-3 mt-4">
               <button onClick={() => setShowAIModal(false)} className="px-4 py-2 text-sm text-gray-500 hover:bg-gray-100 rounded-lg">Cancel</button>
-              <button disabled={aiLoading} onClick={generateFromAI} className="bg-purple-600 text-white px-6 py-2 rounded-lg text-sm font-semibold disabled:bg-purple-300 transition">
+              <button disabled={aiLoading} onClick={generateFromAI} className="bg-blue-600 text-white px-6 py-2 rounded-lg text-sm font-semibold disabled:bg-blue-300 transition">
                 {aiLoading ? 'Thinking...' : 'Generate'}
               </button>
             </div>
@@ -355,10 +360,10 @@ User Request: ${aiPrompt}` }] }],
         <div className="absolute bottom-20 left-1/2 -translate-x-1/2 bg-white border border-slate-200 rounded-lg shadow-xl p-4 w-72 z-50">
           <div className="flex justify-between items-center mb-2 text-sm font-semibold text-blue-600">
             <span>Share Link</span>
-            <button onClick={() => setShowShare(false)}>×</button>
+            <button onClick={() => setShowShare(false)} className="text-blue-600 text-xl font-semibold">×</button>
           </div>
           <div className="flex gap-2">
-            <input readOnly value={typeof window !== 'undefined' ? window.location.href : ''} className="flex-1 text-xs px-2 py-1.5 rounded border bg-slate-50" />
+            <input readOnly value={typeof window !== 'undefined' ? window.location.href : ''} className="flex-1 text-black text-xs px-2 py-1.5 rounded border bg-slate-50" />
             <button onClick={handleCopyLink} className={`text-xs px-3 py-1.5 rounded font-medium text-white ${copied ? 'bg-green-500' : 'bg-blue-600'}`}>
               {copied ? 'Copied' : 'Copy'}
             </button>
@@ -375,7 +380,7 @@ User Request: ${aiPrompt}` }] }],
                 {cursor.username}
               </div>
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                <path d="M5.65376 12.3673H5.46026L5.31717 12.4976L0.500002 16.8829L0.500002 1.19841L11.7841 12.3673H5.65376Z" fill={cursor.color} stroke="white" strokeWidth="2"/>
+                <path d="M5.65376 12.3673H5.46026L5.31717 12.4976L0.500002 16.8829L0.500002 1.19841L11.7841 12.3673H5.65376Z" fill={cursor.color} stroke="white" strokeWidth="2" />
               </svg>
             </div>
           </div>

@@ -47,7 +47,7 @@ export function RoomChat({ roomId, ws, currentUserId }: any) {
         if (data.type === 'chat' && data.roomId === roomId) {
           setMessages((prev) => [...prev, data.message]);
         }
-      } catch (e) {}
+      } catch (e) { }
     };
     ws.addEventListener('message', handleWsMessage);
     return () => ws.removeEventListener('message', handleWsMessage);
@@ -83,12 +83,12 @@ export function RoomChat({ roomId, ws, currentUserId }: any) {
 
   return (
     <>
-      <Button 
-        variant="default" 
-        size="icon" 
+      <Button
+        variant="default"
+        size="icon"
         className={cn(
           "fixed bottom-4 right-4 rounded-full shadow-2xl z-50 h-12 w-12 transition-all",
-          isReady ? "bg-blue-600 hover:bg-blue-700" : "bg-neutral-500"
+          isReady ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-neutral-500 text-white"
         )}
         onClick={() => setIsOpen(!isOpen)}
       >
@@ -97,7 +97,7 @@ export function RoomChat({ roomId, ws, currentUserId }: any) {
 
       <AnimatePresence>
         {isOpen && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, y: 20, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.95 }}
@@ -122,8 +122,8 @@ export function RoomChat({ roomId, ws, currentUserId }: any) {
                         {isMe && msg.error && <AlertCircle className="h-4 w-4 text-red-500 shrink-0" />}
                         <div className={cn(
                           "px-3 py-2 rounded-2xl text-sm break-words shadow-sm",
-                          isMe 
-                            ? (msg.error ? "bg-red-100 text-red-700 border border-red-200" : "bg-blue-600 text-white rounded-br-none") 
+                          isMe
+                            ? (msg.error ? "bg-red-100 text-red-700 border border-red-200" : "bg-blue-600 text-white rounded-br-none")
                             : "bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-bl-none"
                         )}>
                           {msg.content}
@@ -138,9 +138,9 @@ export function RoomChat({ roomId, ws, currentUserId }: any) {
             </ScrollArea>
 
             <div className="p-3 border-t bg-white dark:bg-neutral-900 flex gap-2">
-              <Input 
+              <Input
                 placeholder={isReady ? "Message..." : "Reconnecting..."}
-                value={input} 
+                value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
                 className="h-10 rounded-full bg-neutral-100 dark:bg-neutral-800 border-none"

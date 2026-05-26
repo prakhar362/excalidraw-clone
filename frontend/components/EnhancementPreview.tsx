@@ -52,11 +52,11 @@ export const EnhancementPreview: React.FC<EnhancementPreviewProps> = ({
     const prepareOriginal = async () => {
       try {
         setLoading(true);
-        
+
         // 1. Calculate selection bounds
         const sceneElements = excalidrawAPI.getSceneElements();
         const selected = sceneElements.filter((el: any) => selectedIds.includes(el.id));
-        
+
         if (selected.length === 0) {
           toast.error('No elements found in selection');
           onClose();
@@ -67,11 +67,11 @@ export const EnhancementPreview: React.FC<EnhancementPreviewProps> = ({
         let minY = Infinity;
         let maxX = -Infinity;
         let maxY = -Infinity;
-        
+
         selected.forEach((el: any) => {
           minX = Math.min(minX, el.x);
           minY = Math.min(minY, el.y);
-          
+
           if (el.points && el.points.length > 0) {
             const xs = el.points.map((p: number[]) => p[0]);
             const ys = el.points.map((p: number[]) => p[1]);
@@ -90,7 +90,7 @@ export const EnhancementPreview: React.FC<EnhancementPreviewProps> = ({
         // 2. Extract cropped selection as PNG Blob
         const blob = await CanvasUtils.extractSelectionAsImage(excalidrawAPI, selectedIds);
         setOriginalBlob(blob);
-        
+
         if (originalUrl) URL.revokeObjectURL(originalUrl);
         setOriginalUrl(URL.createObjectURL(blob));
       } catch (err: any) {
@@ -112,7 +112,7 @@ export const EnhancementPreview: React.FC<EnhancementPreviewProps> = ({
   // Trigger enhancement API
   const handleEnhance = useCallback(async () => {
     if (!originalBlob) return;
-    
+
     setLoading(true);
     setPreviewUrl(null);
     setEnhancedElements(null);
@@ -159,7 +159,7 @@ export const EnhancementPreview: React.FC<EnhancementPreviewProps> = ({
 
     try {
       const existing = excalidrawAPI.getSceneElements();
-      
+
       // Shift enhanced elements relative to original bounding box top-left
       // Subtract padding of 20 used in CanvasUtils.extractSelectionAsImage
       const padding = 20;
@@ -212,7 +212,7 @@ export const EnhancementPreview: React.FC<EnhancementPreviewProps> = ({
 
     try {
       const existing = excalidrawAPI.getSceneElements();
-      
+
       const padding = 20;
       const ox = boundsInfo.minX - padding;
       const oy = boundsInfo.minY - padding;
@@ -305,17 +305,16 @@ export const EnhancementPreview: React.FC<EnhancementPreviewProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[1000] p-4 animate-in fade-in duration-200">
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[1000] p-4 animate-in fade-in duration-200">
       <div className="bg-white rounded-3xl w-full max-w-4xl shadow-2xl border border-slate-100 overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200">
-        
+
         {/* Modal Header */}
-        <div className="bg-gradient-to-r from-indigo-600 to-purple-600 px-6 py-4 flex items-center justify-between text-white shrink-0">
+        <div className="bg-black px-6 py-4 flex items-center justify-between text-white shrink-0">
           <div className="flex items-center gap-2">
-            <Sparkles className="h-5 w-5" />
-            <h3 className="font-extrabold text-base tracking-wide">Sketch Enhancement Studio</h3>
+            <h3 className="font-extrabold text-base tracking-wide uppercase">Sketch Enhancement Studio</h3>
           </div>
-          <button 
-            onClick={onClose} 
+          <button
+            onClick={onClose}
             className="rounded-full p-1 bg-white/10 hover:bg-white/20 transition-all text-white"
           >
             <X className="h-5 w-5" />
@@ -324,33 +323,23 @@ export const EnhancementPreview: React.FC<EnhancementPreviewProps> = ({
 
         {/* Modal Content */}
         <div className="p-6 flex flex-col md:flex-row gap-6 overflow-y-auto min-h-0 flex-1">
-          
+
           {/* Left panel: Controls & Settings */}
           <div className="w-full md:w-[320px] flex flex-col gap-4 shrink-0">
-            <StyleSelector 
-              selectedStyle={style} 
-              onStyleChange={setStyle} 
-              disabled={loading} 
+            <StyleSelector
+              selectedStyle={style}
+              onStyleChange={setStyle}
+              disabled={loading}
             />
 
             {/* AI Sketch Beautifier Toggle */}
             {aiAvailable && (
               <div className="border border-slate-100 bg-slate-50/50 rounded-2xl p-4">
                 <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                    <Sparkles className="h-3.5 w-3.5 text-purple-500" />
+                  <span className="text-xs font-bold text-black flex items-center gap-1.5 uppercase tracking-wider">
                     AI Sketch Beautifier
                   </span>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input 
-                      type="checkbox" 
-                      checked={useAI} 
-                      disabled={loading}
-                      onChange={(e) => setUseAI(e.target.checked)}
-                      className="sr-only peer" 
-                    />
-                    <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:height-4 after:width-4 after:transition-all peer-checked:bg-purple-600"></div>
-                  </label>
+
                 </div>
                 <p className="text-[10px] text-slate-500 leading-normal">
                   Uses cloud-powered AI to transform rough strokes into beautiful, clean, perfectly aligned shapes and curves.
@@ -360,27 +349,26 @@ export const EnhancementPreview: React.FC<EnhancementPreviewProps> = ({
 
             {/* Integration settings */}
             <div className="border border-slate-100 bg-slate-50/50 rounded-2xl p-4 flex flex-col gap-3">
-              <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                <Layers className="h-3.5 w-3.5 text-indigo-500" />
+              <span className="text-xs font-bold text-black flex items-center gap-1.5 uppercase tracking-wider">
                 Canvas Placement
               </span>
 
               <div className="flex flex-col gap-2">
                 <label className="flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer">
-                  <input 
-                    type="radio" 
-                    checked={replaceOriginal} 
+                  <input
+                    type="radio"
+                    checked={replaceOriginal}
                     onChange={() => setReplaceOriginal(true)}
-                    className="text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5"
+                    className="text-blue-600 focus:ring-blue-600 h-3.5 w-3.5"
                   />
                   Replace original rough sketch
                 </label>
                 <label className="flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer">
-                  <input 
-                    type="radio" 
-                    checked={!replaceOriginal} 
+                  <input
+                    type="radio"
+                    checked={!replaceOriginal}
                     onChange={() => setReplaceOriginal(false)}
-                    className="text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5"
+                    className="text-blue-600 focus:ring-blue-600 h-3.5 w-3.5"
                   />
                   Place on top of original sketch
                 </label>
@@ -391,18 +379,18 @@ export const EnhancementPreview: React.FC<EnhancementPreviewProps> = ({
           {/* Right panel: Comparison Display */}
           <div className="flex-1 flex flex-col gap-4 min-w-0">
             <label className="text-xs font-bold text-slate-700">Comparative Preview:</label>
-            
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 flex-1 min-h-[280px]">
-              
+
               {/* Original Sketch Crop */}
-              <div className="border border-slate-100 bg-slate-50 rounded-2xl p-4 flex flex-col items-center justify-center relative overflow-hidden group shadow-inner">
-                <span className="absolute top-2 left-2 px-2 py-0.5 bg-slate-800/80 text-white rounded text-[10px] font-bold z-10">
+              <div className="border border-slate-200 bg-slate-50 rounded-lg p-4 flex flex-col items-center justify-center relative overflow-hidden group shadow-inner">
+                <span className="absolute top-2 left-2 px-2 py-0.5 bg-black text-white rounded text-[10px] font-bold z-10 uppercase tracking-wider">
                   Original
                 </span>
                 {originalUrl ? (
-                  <img 
-                    src={originalUrl} 
-                    alt="Original cropped sketch" 
+                  <img
+                    src={originalUrl}
+                    alt="Original cropped sketch"
                     className="max-h-[220px] object-contain rounded-xl select-none"
                   />
                 ) : (
@@ -411,22 +399,22 @@ export const EnhancementPreview: React.FC<EnhancementPreviewProps> = ({
               </div>
 
               {/* Enhanced Sketch Preview */}
-              <div className="border border-slate-100 bg-slate-50 rounded-2xl p-4 flex flex-col items-center justify-center relative overflow-hidden shadow-inner min-h-[220px]">
-                <span className="absolute top-2 left-2 px-2 py-0.5 bg-indigo-600 text-white rounded text-[10px] font-bold z-10">
+              <div className="border border-slate-200 bg-slate-50 rounded-lg p-4 flex flex-col items-center justify-center relative overflow-hidden shadow-inner min-h-[220px]">
+                <span className="absolute top-2 left-2 px-2 py-0.5 bg-black text-white rounded text-[10px] font-bold z-10 uppercase tracking-wider">
                   Enhanced
                 </span>
-                
+
                 {loading ? (
                   <div className="flex flex-col items-center gap-2">
-                    <Loader2 className="h-8 w-8 text-indigo-500 animate-spin" />
-                    <span className="text-[10px] font-bold text-indigo-500 animate-pulse uppercase tracking-wider">
+                    <Loader2 className="h-8 w-8 text-black animate-spin" />
+                    <span className="text-[10px] font-bold text-black animate-pulse uppercase tracking-wider">
                       Processing sketch...
                     </span>
                   </div>
                 ) : previewUrl ? (
-                  <img 
-                    src={previewUrl} 
-                    alt="Enhanced preview" 
+                  <img
+                    src={previewUrl}
+                    alt="Enhanced preview"
                     className="max-h-[220px] object-contain rounded-xl select-none"
                   />
                 ) : (
@@ -457,23 +445,22 @@ export const EnhancementPreview: React.FC<EnhancementPreviewProps> = ({
         </div>
 
         {/* Modal Footer */}
-        <div className="bg-slate-50 border-t border-slate-100 px-6 py-4 flex justify-between items-center shrink-0">
-          <button 
-            onClick={onClose} 
-            className="px-4 py-2 border border-slate-200 hover:bg-white text-slate-600 rounded-xl text-sm font-semibold transition"
+        <div className="bg-slate-50 border-t border-slate-200 px-6 py-4 flex justify-between items-center shrink-0">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 border border-slate-300 hover:bg-slate-100 text-black rounded-md text-sm font-semibold transition uppercase tracking-wider"
           >
             Cancel
           </button>
-          
+
           <div className="flex gap-3">
             {/* Previous vector strokes insert */}
             <button
               onClick={handleApply}
               disabled={loading || !enhancedElements}
-              className="flex items-center gap-1.5 border border-indigo-200 hover:border-indigo-300 hover:bg-indigo-50/50 disabled:opacity-50 text-indigo-700 px-4 py-2 rounded-xl text-sm font-semibold transition cursor-pointer disabled:cursor-not-allowed"
+              className="flex items-center gap-1.5 border border-slate-300 hover:bg-slate-100 disabled:opacity-50 text-black px-4 py-2 rounded-md text-sm font-semibold transition cursor-pointer disabled:cursor-not-allowed uppercase tracking-wider"
               title="Insert as editable Excalidraw vector shapes (may lose details)"
             >
-              <Layers className="h-4 w-4" />
               Place as Vector Strokes
             </button>
 
@@ -481,10 +468,9 @@ export const EnhancementPreview: React.FC<EnhancementPreviewProps> = ({
             <button
               onClick={handleApplyAsImage}
               disabled={loading || !previewUrl}
-              className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white px-6 py-2 rounded-xl text-sm font-semibold transition shadow-md shadow-indigo-600/10 cursor-pointer disabled:cursor-not-allowed"
+              className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white px-6 py-2 rounded-md text-sm font-semibold transition shadow-md cursor-pointer disabled:cursor-not-allowed uppercase tracking-wider"
               title="Insert as a clean, pixel-perfect, high-fidelity image (Recommended)"
             >
-              <Check className="h-4 w-4" />
               Place as Premium Image
             </button>
           </div>

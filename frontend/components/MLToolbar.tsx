@@ -24,7 +24,7 @@ function getSelectedIds(api: any): string[] {
 
 async function addElementsToCanvas(api: any, rawElements: any[], offsetX = 0, offsetY = 0) {
   const existing = api.getSceneElements();
-  const shifted  = rawElements.map((el: any) => ({
+  const shifted = rawElements.map((el: any) => ({
     ...el,
     x: (el.x ?? 0) + offsetX,
     y: (el.y ?? 0) + offsetY,
@@ -41,15 +41,15 @@ async function addElementsToCanvas(api: any, rawElements: any[], offsetX = 0, of
         ...existing,
         ...shifted.map((el: any) => ({
           ...el,
-          version:      1,
+          version: 1,
           versionNonce: Math.floor(Math.random() * 1e6),
-          isDeleted:    false,
-          updated:      Date.now(),
-          seed:         Math.floor(Math.random() * 1e6),
-          groupIds:     el.groupIds     ?? [],
+          isDeleted: false,
+          updated: Date.now(),
+          seed: Math.floor(Math.random() * 1e6),
+          groupIds: el.groupIds ?? [],
           boundElements: el.boundElements ?? [],
-          link:         el.link         ?? null,
-          locked:       el.locked       ?? false,
+          link: el.link ?? null,
+          locked: el.locked ?? false,
         })),
       ],
     });
@@ -60,11 +60,11 @@ async function addElementsToCanvas(api: any, rawElements: any[], offsetX = 0, of
 
 export const MLToolbar: React.FC<MLToolbarProps> = ({ excalidrawAPI }) => {
   const [processing, setProcessing] = useState(false);
-  const [activeBtn,  setActiveBtn]  = useState<string | null>(null);
-  const [statusMsg,  setStatusMsg]  = useState<string>('');
-  const [isHealthy,  setIsHealthy]  = useState(false);
+  const [activeBtn, setActiveBtn] = useState<string | null>(null);
+  const [statusMsg, setStatusMsg] = useState<string>('');
+  const [isHealthy, setIsHealthy] = useState(false);
   const [mathResult, setMathResult] = useState<MathResult | null>(null);
-  
+
   // Sketch enhancement modal states
   const [previewOpen, setPreviewOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -77,31 +77,31 @@ export const MLToolbar: React.FC<MLToolbarProps> = ({ excalidrawAPI }) => {
   const placeMathOnCanvas = useCallback(async (result: MathResult) => {
     if (!excalidrawAPI) return;
     const appState = excalidrawAPI.getAppState();
-    const zoom     = appState.zoom?.value ?? 1;
-    const cx = -appState.scrollX + window.innerWidth  / 2 / zoom;
+    const zoom = appState.zoom?.value ?? 1;
+    const cx = -appState.scrollX + window.innerWidth / 2 / zoom;
     const cy = -appState.scrollY + window.innerHeight / 2 / zoom;
 
     const textEls = [
-      { text: result.equation,                    color: '#6366f1', size: 22, dy: -40 },
-      { text: `x = ${result.solution.join(', ')}`, color: '#16a34a', size: 28, dy:  20 },
+      { text: result.equation, color: '#6366f1', size: 22, dy: -40 },
+      { text: `x = ${result.solution.join(', ')}`, color: '#16a34a', size: 28, dy: 20 },
     ].map(({ text, color, size, dy }, i) => ({
-      id:              `math-${Date.now()}-${i}`,
-      type:            'text' as const,
-      x:               cx - 120,
-      y:               cy + dy,
-      width:           320,
-      height:          size * 1.5,
+      id: `math-${Date.now()}-${i}`,
+      type: 'text' as const,
+      x: cx - 120,
+      y: cy + dy,
+      width: 320,
+      height: size * 1.5,
       text,
-      fontSize:        size,
-      fontFamily:      1,
-      textAlign:       'left'   as const,
-      verticalAlign:   'middle' as const,
-      strokeColor:     color,
+      fontSize: size,
+      fontFamily: 1,
+      textAlign: 'left' as const,
+      verticalAlign: 'middle' as const,
+      strokeColor: color,
       backgroundColor: 'transparent',
-      fillStyle:       'solid'  as const,
-      strokeWidth:     1,
-      roughness:       0,
-      opacity:         100,
+      fillStyle: 'solid' as const,
+      strokeWidth: 1,
+      roughness: 0,
+      opacity: 100,
     }));
 
     await addElementsToCanvas(excalidrawAPI, textEls);
@@ -123,7 +123,7 @@ export const MLToolbar: React.FC<MLToolbarProps> = ({ excalidrawAPI }) => {
     setMathResult(null);
 
     try {
-      const blob   = await mlService.extractSelectionAsImage(excalidrawAPI, ids);
+      const blob = await mlService.extractSelectionAsImage(excalidrawAPI, ids);
       const result = await fn(blob);
 
       if (!result.success) {
@@ -208,7 +208,7 @@ export const MLToolbar: React.FC<MLToolbarProps> = ({ excalidrawAPI }) => {
   // ── Render ───────────────────────────────────────────────────────────
 
   const btnBase = 'flex items-center justify-center gap-1.5 rounded-lg text-xs font-semibold h-8 px-3 transition-all disabled:opacity-50 disabled:cursor-not-allowed border';
-  const btnPrimary = `${btnBase} bg-indigo-600 hover:bg-indigo-700 text-white border-indigo-600`;
+  const btnPrimary = `${btnBase} bg-blue-600 hover:bg-blue-700 text-white border-blue-600`;
   const btnOutline = `${btnBase} bg-white hover:bg-gray-50 text-gray-700 border-gray-200`;
 
   const Spinner = () => <Loader2 className="h-3.5 w-3.5 animate-spin" />;
@@ -225,7 +225,7 @@ export const MLToolbar: React.FC<MLToolbarProps> = ({ excalidrawAPI }) => {
     <>
       {/* ── Toolbar panel ── */}
       <div className="fixed top-4 right-4 bg-white rounded-2xl shadow-xl border border-gray-100 p-4 z-50 w-[210px]">
-        <p className="text-xs font-bold text-gray-700 mb-3">🤖 AI Tools</p>
+        <p className="text-xs font-bold text-gray-700 mb-3">SketchCalibur AI Tools</p>
 
         {/* Auto Enhance — full width */}
         <button
@@ -333,9 +333,9 @@ export const MLToolbar: React.FC<MLToolbarProps> = ({ excalidrawAPI }) => {
       )}
 
       {/* Advanced Sketch Enhancement Studio Modal */}
-      <EnhancementPreview 
-        isOpen={previewOpen} 
-        onClose={() => setPreviewOpen(false)} 
+      <EnhancementPreview
+        isOpen={previewOpen}
+        onClose={() => setPreviewOpen(false)}
         excalidrawAPI={excalidrawAPI}
         selectedIds={selectedIds}
       />

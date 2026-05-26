@@ -46,7 +46,7 @@ export const StyleSelector: React.FC<StyleSelectorProps> = ({
 }) => {
   return (
     <div className="mb-4">
-      <label className="text-xs font-bold block mb-2 text-slate-700">
+      <label className="text-xs font-bold block mb-2 text-black uppercase tracking-wider">
         Enhancement Style:
       </label>
       
@@ -56,15 +56,14 @@ export const StyleSelector: React.FC<StyleSelectorProps> = ({
             key={style.value}
             onClick={() => onStyleChange(style.value)}
             disabled={disabled}
-            className={`p-3 rounded-xl border text-left transition-all duration-200 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50
+            className={`p-3 rounded-md border text-left transition-all duration-200 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50
               ${selectedStyle === style.value
-                ? 'border-indigo-600 bg-indigo-50/50 shadow-sm ring-1 ring-indigo-600/20'
-                : 'border-slate-200 bg-white hover:border-indigo-300 hover:bg-slate-50/50'
+                ? 'border-blue-600 bg-blue-600 text-white shadow-sm ring-1 ring-blue-600'
+                : 'border-slate-300 bg-white hover:border-blue-600 hover:bg-slate-50 text-black'
               }`}
           >
-            <div className="text-xl mb-1">{style.icon}</div>
-            <div className="text-xs font-bold text-slate-800 mb-0.5">{style.label}</div>
-            <div className="text-[10px] text-slate-500 leading-tight">{style.description}</div>
+            <div className={`text-xs font-bold mb-0.5 uppercase tracking-wider ${selectedStyle === style.value ? 'text-white' : 'text-black'}`}>{style.label}</div>
+            <div className={`text-[10px] leading-tight ${selectedStyle === style.value ? 'text-gray-300' : 'text-gray-500'}`}>{style.description}</div>
           </button>
         ))}
       </div>

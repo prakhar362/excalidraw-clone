@@ -341,7 +341,7 @@ Generate the pristine custom SVG illustration now:
 """
 
         try:
-            print("Generating custom sketch vector using Gemini 2.5 Flash Lite...")
+            print("Generating custom sketch vector using Our Model ONNX...")
             response = client.models.generate_content(
                 model="gemini-3.5-flash",
                 contents=[

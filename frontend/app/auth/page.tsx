@@ -27,6 +27,15 @@ import { BACKEND_URL } from '../../config';
 
 function AuthPage() {
   const router = useRouter();
+  
+  // Auto-redirect if already logged in
+  React.useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      router.push('/dashboard');
+    }
+  }, [router]);
+
   const [activeTab, setActiveTab] = useState('signup');
   const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({
