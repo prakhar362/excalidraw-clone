@@ -49,6 +49,9 @@ class Config:
     CONTROLNET_MODEL = "lllyasviel/control_v11p_sd15_scribble"
     CONTROLNET_INFERENCE_STEPS = 20  # Lower = faster, higher = better quality
     CONTROLNET_SCALE = 0.8          # Control strength (0.0-1.0)
+    
+    # Math OCR (EasyOCR fallback - set to "true" only on high-RAM servers to prevent OOM)
+    ENABLE_LOCAL_EASYOCR = os.getenv("ENABLE_LOCAL_EASYOCR", "false").lower() == "true"
 
     # ===== ONNX ML SKETCH ENHANCEMENT (Informative Drawings) =====
     # Auto-downloaded from HuggingFace at startup (~17 MB)

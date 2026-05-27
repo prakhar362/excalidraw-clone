@@ -271,6 +271,12 @@ class MathSolver:
 
     def _get_reader(self) -> object:
         if MathSolver._reader is None:
+            # Prevent OOM crashes on memory-constrained servers (like Render's 512 MB tier)
+            from app.config import config
+            if not getattr(config, "ENABLE_LOCAL_EASYOCR", False):
+                print("EasyOCR is disabled via config to prevent memory limit exhaustion (OOM).")
+                return None
+
             try:
                 import easyocr
                 print("Loading EasyOCR model (first time)...")
