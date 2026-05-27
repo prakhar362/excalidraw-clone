@@ -81,30 +81,72 @@ export const MLToolbar: React.FC<MLToolbarProps> = ({ excalidrawAPI }) => {
     const cx = -appState.scrollX + window.innerWidth / 2 / zoom;
     const cy = -appState.scrollY + window.innerHeight / 2 / zoom;
 
-    const textEls = [
-      { text: result.equation, color: '#6366f1', size: 22, dy: -40 },
-      { text: `x = ${result.solution.join(', ')}`, color: '#16a34a', size: 28, dy: 20 },
-    ].map(({ text, color, size, dy }, i) => ({
-      id: `math-${Date.now()}-${i}`,
-      type: 'text' as const,
-      x: cx - 120,
-      y: cy + dy,
-      width: 320,
-      height: size * 1.5,
-      text,
-      fontSize: size,
-      fontFamily: 1,
-      textAlign: 'left' as const,
-      verticalAlign: 'middle' as const,
-      strokeColor: color,
-      backgroundColor: 'transparent',
-      fillStyle: 'solid' as const,
-      strokeWidth: 1,
-      roughness: 0,
-      opacity: 100,
-    }));
+    const timestamp = Date.now();
+    const cardWidth = 440;
+    const cardHeight = 160;
+    const cardX = cx - cardWidth / 2;
+    const cardY = cy - cardHeight / 2;
 
-    await addElementsToCanvas(excalidrawAPI, textEls);
+    const newElements = [
+      // 1. Premium Background Card Container
+      {
+        id: `math-bg-${timestamp}`,
+        type: 'rectangle' as const,
+        x: cardX,
+        y: cardY,
+        width: cardWidth,
+        height: cardHeight,
+        strokeColor: '#4f46e5', // Indigo-600
+        backgroundColor: '#f5f3ff', // Soft violet-50
+        fillStyle: 'solid' as const,
+        strokeWidth: 1.5,
+        roughness: 0,
+        opacity: 100,
+        roundness: { type: 3 }, // Rounded corners
+      },
+      // 2. Equation Title (Centered, medium indigo)
+      {
+        id: `math-eq-${timestamp}`,
+        type: 'text' as const,
+        x: cardX + 20,
+        y: cardY + 25,
+        width: cardWidth - 40,
+        height: 25,
+        text: `Equation: ${result.equation}`,
+        fontSize: 20,
+        fontFamily: 1,
+        strokeColor: '#3730a3', // Deep Indigo-800
+        textAlign: 'center' as const,
+        verticalAlign: 'middle' as const,
+        backgroundColor: 'transparent',
+        fillStyle: 'solid' as const,
+        strokeWidth: 1,
+        roughness: 0,
+        opacity: 100,
+      },
+      // 3. Mathematical Solution (Centered, large, bold indigo)
+      {
+        id: `math-sol-${timestamp}`,
+        type: 'text' as const,
+        x: cardX + 20,
+        y: cardY + 75,
+        width: cardWidth - 40,
+        height: 50,
+        text: `x = ${result.solution.join(', ')}`,
+        fontSize: 34, // Significantly larger for premium presentation
+        fontFamily: 1,
+        strokeColor: '#4338ca', // Deep Indigo-700
+        textAlign: 'center' as const,
+        verticalAlign: 'middle' as const,
+        backgroundColor: 'transparent',
+        fillStyle: 'solid' as const,
+        strokeWidth: 1,
+        roughness: 0,
+        opacity: 100,
+      }
+    ];
+
+    await addElementsToCanvas(excalidrawAPI, newElements);
   }, [excalidrawAPI]);
 
   // ── Generic runner ───────────────────────────────────────────────────

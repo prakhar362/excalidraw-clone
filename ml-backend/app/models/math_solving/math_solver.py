@@ -35,6 +35,15 @@ class MathSolver:
         print("MATH SOLVER: starting recognition")
         print("="*55)
 
+        # Ensure a solid white background to resolve transparency issues
+        # (e.g., transparent SVGs or PNGs showing black text on a black background to the vision models)
+        if image.mode in ('RGBA', 'LA') or (image.mode == 'P' and 'transparency' in image.info):
+            bg = Image.new("RGBA", image.size, (255, 255, 255, 255))
+            bg.paste(image, (0, 0), image)
+            image = bg.convert("RGB")
+        elif image.mode != "RGB":
+            image = image.convert("RGB")
+
         # ── Tier 0: Roboflow ──────────────────────────────────────────
         roboflow_eq = self._roboflow_read(image)
         if roboflow_eq:
@@ -249,7 +258,22 @@ class MathSolver:
                 {"mime_type": "image/png", "data": img_b64},
             ])
 
-            raw = response.text.strip()
+            # Safely extract text to avoid 'Invalid operation: The response.text quick accessor requires...'
+            raw = ""
+            try:
+                if hasattr(response, "text") and response.text:
+                    raw = response.text.strip()
+            except Exception as tex_err:
+                print(f"Gemini: response.text access failed: {tex_err}")
+                # Manual extraction fallback from parts
+                if hasattr(response, "candidates") and len(response.candidates) > 0:
+                    cand = response.candidates[0]
+                    if cand.content and cand.content.parts:
+                        for part in cand.content.parts:
+                            if hasattr(part, "text") and part.text:
+                                raw += part.text
+                        raw = raw.strip()
+
             print(f"Gemini raw output: '{raw}'")
 
             # Strip any surrounding explanation the model might have added
