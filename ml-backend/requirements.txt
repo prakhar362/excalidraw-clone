@@ -21,7 +21,7 @@ onnxruntime>=1.17.0
 scipy>=1.11.4
 
 # ── Gemini AI (fallback enhancer + math solver + handwriting OCR) ─────────────
-google-genai
+google-generativeai
 requests
 
 # ── Handwriting recognition ───────────────────────────────────────────────────
