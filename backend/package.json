@@ -5,7 +5,8 @@
   "scripts": {
     "build": "tsc -b",
     "start": "node ./dist/index.js",
-    "dev": "npm run build && npm run start"
+    "dev": "npm run build && npm run start",
+    "load-test": "ts-node src/load-test.ts"
   },
   "keywords": [],
   "author": "",

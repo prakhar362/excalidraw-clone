@@ -69,10 +69,15 @@ function attachWebSocketServer(server) {
                         break;
                     case 'cursor': {
                         try {
-                            const dbUser = yield User_1.User.findById(user.userId).select('name');
-                            if (!dbUser)
-                                return;
-                            const username = dbUser.name;
+                            let username = parsed.username || 'Collaborator';
+                            // Only query MongoDB if the userId is a valid 24-character hexadecimal ObjectId
+                            const isValidObjectId = /^[0-9a-fA-F]{24}$/.test(user.userId);
+                            if (isValidObjectId) {
+                                const dbUser = yield User_1.User.findById(user.userId).select('name');
+                                if (dbUser) {
+                                    username = dbUser.name;
+                                }
+                            }
                             users.forEach(u => {
                                 if (u.ws !== ws && u.rooms.includes(roomId)) {
                                     u.ws.send(JSON.stringify({
